@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { fetchMovies } from '../store/movieSlice';
-import { NavBar } from '../components/Navbar';
+import { NavBar } from '../components/NavBar';
 import  UploadMovie  from '../components/UploadMovie.jsx';
 import { MovieList } from '../components/MovieList';
 
