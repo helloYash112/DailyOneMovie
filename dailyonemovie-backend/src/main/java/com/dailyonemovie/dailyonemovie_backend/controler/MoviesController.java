@@ -12,7 +12,7 @@ import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
 @RestController
 @RequestMapping("/movies")
 public class MoviesController {
