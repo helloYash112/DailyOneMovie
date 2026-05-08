@@ -1,0 +1,36 @@
+package com.dailyonemovie.dailyonemovie_backend.config;
+
+import java.net.URI;
+
+import software.amazon.awssdk.regions.Region;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.services.s3.S3Client;
+
+@Configuration
+public class B2Config {
+
+    @Value("${b2.endpoint}")
+    private String endpoint;
+
+    @Value("${b2.accessKeyId}")
+    private String accessKeyId;
+
+    @Value("${b2.secretAccessKey}")
+    private String secretAccessKey;
+    
+
+    @Bean
+    public S3Client s3Client() {
+        return S3Client.builder()
+                .endpointOverride(URI.create(endpoint))
+                .credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(accessKeyId, secretAccessKey)))
+                .region(Region.US_EAST_1)
+                .build();
+    }
+}

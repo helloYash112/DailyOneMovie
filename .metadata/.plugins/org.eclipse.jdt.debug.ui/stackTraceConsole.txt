@@ -1,0 +1,41 @@
+public void uploadFile(String key,
+                       MultipartFile multipartFile,
+                       String contentType) {
+
+    File tempFile = null;
+
+    try {
+
+        // Create temp file
+        tempFile = File.createTempFile("upload-", ".tmp");
+
+        // Copy multipart content to temp file
+        multipartFile.transferTo(tempFile);
+
+        PutObjectRequest putRequest = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .contentType(contentType)
+                .build();
+
+        // Upload using file
+        s3Client.putObject(
+                putRequest,
+                RequestBody.fromFile(tempFile)
+        );
+
+        System.out.println("UPLOAD SUCCESS");
+
+    } catch (Exception e) {
+
+        e.printStackTrace();
+        throw new RuntimeException(e);
+
+    } finally {
+
+        // Delete temp file
+        if (tempFile != null && tempFile.exists()) {
+            tempFile.delete();
+        }
+    }
+}

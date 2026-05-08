@@ -1,0 +1,74 @@
+package com.dailyonemovie.dailyonemovie_backend.controler;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
+import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
+
+import java.io.IOException;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/movies")
+public class MoviesController {
+
+	private final MoviesService moviesService;
+
+	public MoviesController(MoviesService moviesService) {
+		this.moviesService = moviesService;
+	}
+
+	/** Upload a new movie + poster */
+	@PostMapping("/upload")
+	public ResponseEntity<Movies> uploadMovie(@RequestParam("title") String title, @RequestParam("genre") String genre,
+			@RequestParam("duration") int duration, @RequestParam("rating") double rating,
+			@RequestParam("movieFile") MultipartFile movieFile, @RequestParam("posterFile") MultipartFile posterFile) {
+
+		Movies movie = new Movies();
+
+		movie.setTitle(title);
+		movie.setGenre(genre);
+		movie.setDuration(duration);
+		movie.setRating(rating);
+
+		// Better unique filenames
+		String movieKey = UUID.randomUUID() + "_" + movieFile.getOriginalFilename();
+		String posterKey = UUID.randomUUID() + "_" + posterFile.getOriginalFilename();
+
+		movie.setMovieKey(movieKey);
+		movie.setPosterKey(posterKey);
+
+		Movies saved = moviesService.saveMovie(movie, movieFile, posterFile);
+
+		return ResponseEntity.ok(saved);
+	}
+
+	/** Get movie metadata */
+	@GetMapping("/{id}")
+	public ResponseEntity<Movies> getMovie(@PathVariable Long id) {
+		return moviesService.getMovie(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+	}
+
+	/** Stream movie (pre-signed URL) */
+	@GetMapping("/{id}/stream")
+	public ResponseEntity<String> streamMovie(@PathVariable Long id) {
+		String url = moviesService.getMovieStreamUrl(id);
+		return ResponseEntity.ok(url);
+	}
+
+	/** Get poster (pre-signed URL) */
+	@GetMapping("/{id}/poster")
+	public ResponseEntity<String> getPoster(@PathVariable Long id) {
+		String url = moviesService.getPosterUrl(id);
+		return ResponseEntity.ok(url);
+	}
+
+	/** Delete movie */
+	@DeleteMapping("/{id}")
+	public ResponseEntity<Void> deleteMovie(@PathVariable Long id) {
+		moviesService.deleteMovie(id);
+		return ResponseEntity.noContent().build();
+	}
+}

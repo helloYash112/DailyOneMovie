@@ -1,0 +1,14 @@
+package com.dailyonemovie.dailyonemovie_backend;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class DailyonemovieBackendApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(DailyonemovieBackendApplication.class, args);
+		System.out.println("sucessfully excuted...");
+	}
+
+}

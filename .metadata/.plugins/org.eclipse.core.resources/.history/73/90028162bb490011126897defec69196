@@ -1,0 +1,5 @@
+package com.dailyonemovie.dailyonemovie_backend.controler;
+
+public class MoviesController {
+
+}

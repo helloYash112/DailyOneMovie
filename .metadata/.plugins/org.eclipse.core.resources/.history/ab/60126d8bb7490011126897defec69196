@@ -1,0 +1,5 @@
+package com.dailyonemovie.dailyonemovie_backend.service;
+
+public class MovieStorageService {
+
+}
