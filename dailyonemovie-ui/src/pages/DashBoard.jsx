@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { fetchMovies } from '../store/movieSlice';
-import { Navbar } from '../components/Navbar';
+import { NavBar } from '../components/Navbar';
 import  UploadMovie  from '../components/UploadMovie.jsx';
 import { MovieList } from '../components/MovieList';
 
-export default function Dashboard() {
+export default function DashBoard() {
   const dispatch = useDispatch();
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export default function Dashboard() {
   return (
     <div className='min-h-screen bg-gray-100'>
       
-      <Navbar />
+      <NavBar />
 
       <div className='max-w-7xl mx-auto p-6 space-y-8'>
         

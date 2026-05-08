@@ -2,7 +2,7 @@ import { useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { clearMovies } from '../store/movieSlice';
 
-export function Navbar() {
+export function NavBar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
