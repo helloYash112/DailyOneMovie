@@ -55,7 +55,7 @@ export default function UploadMovie() {
           <div className="bg-white rounded-2xl w-full max-w-md p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-bold text-gray-900">Upload Video</h3>
-              <button onClick={() => !uploading && setIsOpen(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+              <button onClick={() =>setIsOpen(false)} className="text-gray-400 hover:text-gray-600 text-2xl">Close form...</button>
             </div>
       <form
         onSubmit={handleSubmit}
