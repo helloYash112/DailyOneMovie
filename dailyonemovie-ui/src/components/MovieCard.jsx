@@ -14,10 +14,10 @@ export function MovieCard({ movie }) {
       />
 
       <div className='p-4 space-y-2'>
-        <h2 className='font-bold text-lg'>{movie.title}</h2>
-        <p>{movie.genre}</p>
-        <p>{movie.duration} min</p>
-        <p>{movie.rating}</p>
+        <h2 className='font-bold text-lg'>title : {movie.title}</h2>
+        <p>genre : {movie.genre}</p>
+        <p>duration : {movie.duration} min</p>
+        <p>rating : {movie.rating}</p>
 
         <div className='flex gap-2'>
           <button

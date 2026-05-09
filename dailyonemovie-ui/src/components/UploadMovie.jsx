@@ -5,9 +5,9 @@ import { upload } from "../store/movieSlice";
 export default function UploadMovie() {
   const dispatch = useDispatch();
   const { status, error } = useSelector((state) => state?.movies);
-  console.log("status", status, "error", error);
+  //console.log("status", status, "error", error);
   const [progress, setProgress] = useState(0);
-
+  const[isOpen,setIsOpen]=useState(false);
   const [form, setForm] = useState({
     title: "",
     genre: "",
@@ -32,10 +32,31 @@ export default function UploadMovie() {
 
     dispatch(upload({ data:formData, onProgress: (val) => setProgress(val) }));
   };
-  console.log("uploading progress :",progress);
+ 
 
   return (
     <>
+    <div>
+        <h2 className="text-2xl font-bold text-gray-800">Your Library</h2>
+        <p className="text-gray-500">Manage and upload your private movie collection</p>
+      </div>
+      
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-md active:scale-95"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+        </svg>
+        Upload New Movie
+      </button>
+      { isOpen &&(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-8 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-gray-900">Upload Video</h3>
+              <button onClick={() => !uploading && setIsOpen(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
       <form
         onSubmit={handleSubmit}
         className="grid gap-3 p-4 rounded-2xl shadow-lg bg-white"
@@ -84,32 +105,10 @@ export default function UploadMovie() {
           Upload Movie
         </button>
       </form>
-      {/* Pending State: Show Progress Bar */}
-      {status === "pending" && (
-        <div className="mt-4">
-          <div className="w-full bg-gray-200 h-4 rounded">
-            <div
-              className="bg-blue-600 h-4 rounded transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p>
-            {progress === 100
-              ? "Finalizing on server..."
-              : `Uploading: ${progress}%`}
-          </p>
-        </div>
-      )}
-
-      {/* Success State */}
-      {status === "success" && (
-        <p className="text-green-500 mt-2">Movie uploaded successfully!</p>
-      )}
-
-      {/* Error State */}
-      {status === "error" && (
-        <p className="text-red-500 mt-2">Error: {error?.error}</p>
-      )}
+      </div>
+      </div>)
+}
+      
     </>
   );
 }

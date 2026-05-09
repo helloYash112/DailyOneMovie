@@ -8,7 +8,7 @@ export function NavBar() {
 
   const logout = () => {
     dispatch(clearMovies());
-    navigate('/login');
+    //navigate('/login');
   };
 
   return (
