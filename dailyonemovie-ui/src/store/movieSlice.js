@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
-const apiLink = import.meta.env.VITE_API_LINK;
+const apiLink = import.meta.env.VITE_API_URL;
 
 /**
  * task done...
