@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
+const apiLink = import.meta.env.VITE_API_LINK;
 
 /**
  * task done...
@@ -11,7 +12,7 @@ import axios from "axios";
  */
 
 const API = axios.create({
-  baseURL: "https://dailyonemovie.onrender.com/",
+  baseURL: apiLink,
 });
 /*
 const Movie = {
