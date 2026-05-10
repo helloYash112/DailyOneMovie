@@ -1,0 +1,12 @@
+{
+  "name": "Spring Codespace",
+  "containerEnv": {
+    "DB_URL": "${{ secrets.DB_URL }}",
+    "DB_USER": "${{ secrets.DB_USER }}",
+    "DB_PASS": "${{ secrets.DB_PASS }}",
+    "B2_SECRET_ACCESS_KEY":"${{secrets.B2_SECRET_ACCESS_KEY}}",
+    "B2_ENDPOINT":"${{secrets.B2_ENDPOINT}}",
+    "B2_BUCKET_NAME":"${{secrets.B2_BUCKET_NAME}}",
+    "B2_ACCESS_KEY_ID":"${{secrets.B2_ACCESS_KEY_ID}}"
+  }
+}
