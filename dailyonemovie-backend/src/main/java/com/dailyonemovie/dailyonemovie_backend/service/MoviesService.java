@@ -10,6 +10,7 @@ import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
 
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,15 +29,18 @@ public class MoviesService {
 	@Transactional
 	public MoviesDTO saveMovie(Movies movie, MultipartFile movieFile, MultipartFile posterFile) {
 
-// Upload movie
+		// Upload movie
 		storageService.uploadFile(movie.getMovieKey(), movieFile, movieFile.getContentType());
 
-// Upload poster
+		// Upload poster
 		storageService.uploadFile(movie.getPosterKey(), posterFile, posterFile.getContentType());
 
-// Save metadata in DB
-		Movies movies= moviesRepository.save(movie);
-		return new MoviesDTO(movies.getId(),movies.getTitle(),movies.getGenre(),movies.getDuration(),movies.getRating(),movies.getMovieKey(),movies.getPosterKey(),storageService.generatePresignedUrl(movies.getMovieKey()),storageService.generatePresignedUrl(movies.getPosterKey()));
+		// Save metadata in DB
+		Movies movies = moviesRepository.save(movie);
+		return new MoviesDTO(movies.getId(), movies.getTitle(), movies.getGenre(), movies.getDuration(),
+				movies.getRating(), movies.getMovieKey(), movies.getPosterKey(),
+				storageService.generatePresignedUrl(movies.getMovieKey(), Duration.ofHours(9)),
+				storageService.generatePresignedUrl(movies.getPosterKey(), Duration.ofHours(9)));
 	}
 
 	/** Get movie metadata */
@@ -47,13 +51,13 @@ public class MoviesService {
 	/** Generate streaming URL for movie */
 	public String getMovieStreamUrl(Long id) {
 		Movies movie = moviesRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
-		return storageService.generatePresignedUrl(movie.getMovieKey());
+		return storageService.generatePresignedUrl(movie.getMovieKey(), Duration.ofHours(9));
 	}
 
 	/** Generate streaming URL for poster */
 	public String getPosterUrl(Long id) {
 		Movies movie = moviesRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
-		return storageService.generatePresignedUrl(movie.getPosterKey());
+		return storageService.generatePresignedUrl(movie.getPosterKey(), Duration.ofHours(9));
 	}
 
 	/** Delete movie (DB + Backblaze) */
@@ -81,15 +85,30 @@ public class MoviesService {
 			String posterUrl = null;
 
 			if (movie.getMovieKey() != null) {
-				movieUrl = storageService.generatePresignedUrl(movie.getMovieKey());
+				movieUrl = storageService.generatePresignedUrl(movie.getMovieKey(), Duration.ofHours(9));
 			}
 
 			if (movie.getPosterKey() != null) {
-				posterUrl = storageService.generatePresignedUrl(movie.getPosterKey());
+				posterUrl = storageService.generatePresignedUrl(movie.getPosterKey(), Duration.ofHours(9));
 			}
 
 			return new MoviesDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
 					movie.getRating(), movie.getMovieKey(), movie.getPosterKey(), movieUrl, posterUrl);
 		}).toList();
 	}
+
+	public String getUploadUrl(String key, String fileType) {
+		return storageService.generateUploadUrl(key, fileType);
+	}
+
+	public MoviesDTO saveAndReturnMovie(Movies movie) {
+
+		Movies movies = moviesRepository.save(movie);
+		return new MoviesDTO(movies.getId(), movies.getTitle(), movies.getGenre(), movies.getDuration(),
+				movies.getRating(), movies.getMovieKey(), movies.getPosterKey(),
+				storageService.generatePresignedUrl(movies.getMovieKey(), Duration.ofHours(9)),
+				storageService.generatePresignedUrl(movies.getPosterKey(), Duration.ofHours(9)));
+
+	}
+
 }

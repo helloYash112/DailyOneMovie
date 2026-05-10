@@ -10,6 +10,7 @@ import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @CrossOrigin(origins = "https://dailyonemovie.netlify.app")
@@ -22,36 +23,62 @@ public class MoviesController {
 	public MoviesController(MoviesService moviesService) {
 		this.moviesService = moviesService;
 	}
+
 	@PostMapping("/upload")
 	public ResponseEntity<MoviesDTO> uploadMovie(
-	        @ModelAttribute MovieUploadRequest request
-	) {
-	    Movies movie = new Movies();
+			@ModelAttribute MovieUploadRequest request) {
+		Movies movie = new Movies();
 
-	    movie.setTitle(request.title());
-	    movie.setGenre(request.genre());
-	    movie.setDuration(request.duration());
-	    movie.setRating(request.rating());
+		movie.setTitle(request.title());
+		movie.setGenre(request.genre());
+		movie.setDuration(request.duration());
+		movie.setRating(request.rating());
 
-	    // Better unique filenames
-	    String movieKey = UUID.randomUUID() + "_" + request.movieFile().getOriginalFilename();
-	    String posterKey = UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
+		// Better unique filenames
+		String movieKey = UUID.randomUUID() + "_" + request.movieFile().getOriginalFilename();
+		String posterKey = UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
 
-	    movie.setMovieKey(movieKey);
-	    movie.setPosterKey(posterKey);
+		movie.setMovieKey(movieKey);
+		movie.setPosterKey(posterKey);
 
-	    MoviesDTO saved = moviesService.saveMovie(
-	            movie,
-	            request.movieFile(),
-	            request.posterFile()
-	    );
+		MoviesDTO saved = moviesService.saveMovie(
+				movie,
+				request.movieFile(),
+				request.posterFile());
 
-	    return ResponseEntity.ok(saved);
+		return ResponseEntity.ok(saved);
 	}
+
+	@PostMapping("/prepare-upload")
+	public ResponseEntity<?> prepare(@RequestBody Map<String, String> request) {
+		// Generate unique keys so files never overwrite each other
+		String movieKey = UUID.randomUUID() + "_" + request.get("movieName");
+		String posterKey = UUID.randomUUID() + "_" + request.get("posterName");
+
+		// Generate the temporary URLs for the browser
+		String movieUrl = moviesService.getUploadUrl(movieKey, "video/mp4");
+		String posterUrl = moviesService.getUploadUrl(posterKey, "image/jpeg");
+
+		return ResponseEntity.ok(Map.of(
+				"movieUrl", movieUrl, "posterUrl", posterUrl,
+				"movieKey", movieKey, "posterKey", posterKey));
+	}
+
+	@PostMapping("/confirm-save")
+	public ResponseEntity<?> save(@RequestBody Movies movie) {
+		
+		if (movie.getMovieKey() == null || movie.getPosterKey() == null) {
+			return ResponseEntity.badRequest().body("Missing file keys!");
+		}
+		return ResponseEntity.ok(moviesService.saveAndReturnMovie(movie));
+	}
+
+
 
 	/** Upload a new movie + poster */
 	@PostMapping("/formupload")
-	public ResponseEntity<MoviesDTO> uploadMovie(@RequestParam("title") String title, @RequestParam("genre") String genre,
+	public ResponseEntity<MoviesDTO> uploadMovie(@RequestParam("title") String title,
+			@RequestParam("genre") String genre,
 			@RequestParam("duration") int duration, @RequestParam("rating") double rating,
 			@RequestParam("movieFile") MultipartFile movieFile, @RequestParam("posterFile") MultipartFile posterFile) {
 
@@ -100,10 +127,10 @@ public class MoviesController {
 		moviesService.deleteMovie(id);
 		return ResponseEntity.noContent().build();
 	}
-	//getting all movies from database
+	// getting all movies from database
 
 	@GetMapping
 	public ResponseEntity<List<MoviesDTO>> fetchMovies() {
-	    return ResponseEntity.ok(moviesService.fetchMovies());
+		return ResponseEntity.ok(moviesService.fetchMovies());
 	}
 }

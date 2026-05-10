@@ -10,6 +10,8 @@ import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.File;
 import java.io.InputStream;
@@ -65,11 +67,11 @@ public class MovieStorageService {
 	}
 
 	/** Generate pre-signed URL (valid for 9 hours) */
-	public String generatePresignedUrl(String key) {
+	public String generatePresignedUrl(String key,Duration expirey) {
 		GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(bucketName).key(key).build();
 
 		GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-				.signatureDuration(Duration.ofHours(9)).getObjectRequest(getObjectRequest).build();
+				.signatureDuration(expirey).getObjectRequest(getObjectRequest).build();
 
 		PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
 		return presignedRequest.url().toString();
@@ -80,5 +82,12 @@ public class MovieStorageService {
 		DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder().bucket(bucketName).key(key).build();
 
 		s3Client.deleteObject(deleteRequest);
+	}
+	/** generating presigned upload metthod to drect upload from ui  */
+	public String generateUploadUrl(String key,String type){
+		PutObjectRequest putRequest =PutObjectRequest.builder().bucket(bucketName).key(key).contentType(type).build();
+		PutObjectPresignRequest preSigned=PutObjectPresignRequest.builder().signatureDuration(Duration.ofMinutes(45)).putObjectRequest(putRequest).build();
+		PresignedPutObjectRequest presignedReq=s3Presigner.presignPutObject(preSigned);
+		return presignedReq.url().toString();
 	}
 }
