@@ -4,6 +4,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
+import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
+
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
@@ -12,10 +16,15 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.io.File;
 import java.io.InputStream;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class MovieStorageService {
@@ -79,10 +88,25 @@ public class MovieStorageService {
 
 	/** Delete movie or poster */
 	public void deleteFile(String key) {
-		DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder().bucket(bucketName).key(key).build();
+    try {
+        // Log exactly what is being sent to find hidden space issues
+        System.out.println("Attempting to delete key: [" + key + "]");
 
-		s3Client.deleteObject(deleteRequest);
-	}
+        DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key) 
+                .build();
+
+        s3Client.deleteObject(deleteRequest);
+        
+        // S3 is idempotent, so we manually check if it worked
+        System.out.println("Delete request processed by S3.");
+        
+    } catch (S3Exception e) {
+        System.err.println("AWS S3 Error: " + e.awsErrorDetails().errorMessage());
+    }
+}
+	
 	/** generating presigned upload metthod to drect upload from ui  */
 	public String generateUploadUrl(String key,String type){
 		PutObjectRequest putRequest =PutObjectRequest.builder().bucket(bucketName).key(key).contentType(type).build();
@@ -90,4 +114,74 @@ public class MovieStorageService {
 		PresignedPutObjectRequest presignedReq=s3Presigner.presignPutObject(preSigned);
 		return presignedReq.url().toString();
 	}
+	    public List<String> listFiles() {
+        ListObjectsV2Response response = s3Client.listObjectsV2(ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .build());
+
+        return response.contents().stream()
+                .map(S3Object::key)
+                .collect(Collectors.toList());
+    }
+
+	public MultipartInitResponse initiateMultipartUpload(String fileName, int totalParts) {
+        String fileKey = "large-uploads/" + UUID.randomUUID() + "_" + fileName;
+
+        // 1. Ask S3 to start a multipart transaction
+        CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
+                .bucket(bucketName)
+                .key(fileKey)
+                .build();
+        
+        CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
+        String uploadId = createResponse.uploadId();
+
+        // 2. Generate a presigned URL for every chunk/part
+        List<PartUrlInfo> partUrls = new ArrayList<>();
+        for (int partNumber = 1; partNumber <= totalParts; partNumber++) {
+            
+            UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileKey)
+                    .uploadId(uploadId)
+                    .partNumber(partNumber)
+                    .build();
+
+            UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
+                    .signatureDuration(Duration.ofMinutes(45))
+                    .uploadPartRequest(uploadPartRequest)
+                    .build();
+
+            String presignedUrl = s3Presigner.presignUploadPart(presignRequest).url().toString();
+            partUrls.add(new PartUrlInfo(partNumber, presignedUrl));
+        }
+
+        return new MultipartInitResponse(uploadId, fileKey, partUrls);
+    }
+
+	public void completeMultipartUpload(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
+    
+    List<CompletedPart> parts = completedParts.stream()
+            // 1. Map your record to the SDK's CompletedPart
+            .map(p -> CompletedPart.builder()
+                    .partNumber(p.partNumber()) // Using record getter syntax
+                    .eTag(p.eTag())
+                    .build())
+            // 2. CRITICAL: Sort by part number ascending so AWS S3 doesn't reject it
+            .sorted((p1, p2) -> Integer.compare(p1.partNumber(), p2.partNumber()))
+            .collect(Collectors.toList());
+
+    CompletedMultipartUpload completedMultipartUpload = CompletedMultipartUpload.builder()
+            .parts(parts)
+            .build();
+
+    CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
+            .bucket(bucketName)
+            .key(fileKey)
+            .uploadId(uploadId)
+            .multipartUpload(completedMultipartUpload)
+            .build();
+
+    s3Client.completeMultipartUpload(completeRequest);
+}
 }

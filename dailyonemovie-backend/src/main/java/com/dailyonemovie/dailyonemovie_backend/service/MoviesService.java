@@ -5,7 +5,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
 
@@ -109,6 +111,19 @@ public class MoviesService {
 				storageService.generatePresignedUrl(movies.getMovieKey(), Duration.ofHours(9)),
 				storageService.generatePresignedUrl(movies.getPosterKey(), Duration.ofHours(9)));
 
+	}
+	public List<String> getListOfFileFromCloud(){
+		return storageService.listFiles();
+	}
+
+    public MultipartInitResponse initiateMultipartUploadService(String fileName, int totalParts) {
+        return storageService.initiateMultipartUpload(fileName, totalParts);
+    }
+
+	public void completeMultipartUploadService(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
+		
+     storageService.completeMultipartUpload(fileKey, uploadId, completedParts);
+	
 	}
 
 }

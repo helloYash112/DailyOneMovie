@@ -4,8 +4,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 
@@ -13,7 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
+//@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
+@CrossOrigin(origins = "https://dailyonemovie-mcr4--5173--4c73681d.local-credentialless.webcontainer.io")
 @RestController
 @RequestMapping("/movies")
 public class MoviesController {
@@ -133,4 +137,24 @@ public class MoviesController {
 	public ResponseEntity<List<MoviesDTO>> fetchMovies() {
 		return ResponseEntity.ok(moviesService.fetchMovies());
 	}
+	@GetMapping("/all/movies")
+	public List<String> getMoviesFromCloud(){
+		return moviesService.getListOfFileFromCloud();
+	}
+	@PostMapping("/initiate")
+    public ResponseEntity<MultipartInitResponse> initiate(@RequestBody MultipartInitRequest request) {
+        MultipartInitResponse response = moviesService.initiateMultipartUploadService(
+                request.fileName(), request.totalParts());
+        return ResponseEntity.ok(response);
+    }
+
+	@PostMapping("/complete")
+    public ResponseEntity<Map<String, String>> complete(
+            @RequestParam String fileKey,
+            @RequestParam String uploadId,
+            @RequestBody List<CompletedPartDto> completedParts) {
+        
+        moviesService.completeMultipartUploadService(fileKey, uploadId, completedParts);
+        return ResponseEntity.ok(Map.of("message", "File successfully assembled in S3!"));
+    }
 }
