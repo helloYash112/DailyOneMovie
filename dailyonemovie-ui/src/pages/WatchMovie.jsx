@@ -21,7 +21,7 @@ export default function WatchMovie() {
   if (!movie?.movieUrl) return <p>Loading movie...</p>;
 
   return (
-    <div className='p-6'>
+    <div className='p-6 bg-black'>
       <VideoPlayer src={movie.movieUrl} />
     </div>
   );

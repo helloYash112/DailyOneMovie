@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useDispatch ,useSelector} from 'react-redux';
 import { fetchMovies } from '../store/movieSlice';
 import { NavBar } from '../components/NavBar';
-import  UploadMovie  from '../components/UploadMovie.jsx';
+import  UploadMovies  from '../components/UploadMovies.jsx';
 import { MovieList } from '../components/MovieList';
 
 export default function DashBoard() {
@@ -17,13 +17,13 @@ export default function DashBoard() {
   }
 }, [status, movies.length, dispatch]);
   return (
-    <div className='min-h-screen bg-gray-100'>
+    <div className='min-h-screen bg-black'>
       
       <NavBar />
 
       <div className='max-w-7xl mx-auto p-6 space-y-8'>
         
-        <UploadMovie />
+        <UploadMovies />
         <MovieList />
       </div>
     </div>
