@@ -1,6 +1,9 @@
 package com.dailyonemovie.dailyonemovie_backend.service;
 
-import org.jspecify.annotations.Nullable;
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,11 +13,6 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
-
-import java.io.InputStream;
-import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
 
 @Service
 public class MoviesService {
@@ -121,6 +119,7 @@ public class MoviesService {
     }
 
 	public void completeMultipartUploadService(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
+		System.out.println("i am in movie service class and calling movie storage service class method....");
 		
      storageService.completeMultipartUpload(fileKey, uploadId, completedParts);
 	

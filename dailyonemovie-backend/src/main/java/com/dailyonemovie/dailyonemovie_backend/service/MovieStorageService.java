@@ -1,5 +1,12 @@
 package com.dailyonemovie.dailyonemovie_backend.service;
 
+import java.io.File;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -10,21 +17,25 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
 
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
-
-import java.io.File;
-import java.io.InputStream;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class MovieStorageService {
@@ -160,6 +171,8 @@ public class MovieStorageService {
     }
 
 	public void completeMultipartUpload(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
+		System.out.println("i am in MovieStorage class ...");
+		System.out.println("fetching completedpart from list...");
     
     List<CompletedPart> parts = completedParts.stream()
             // 1. Map your record to the SDK's CompletedPart
@@ -170,18 +183,19 @@ public class MovieStorageService {
             // 2. CRITICAL: Sort by part number ascending so AWS S3 doesn't reject it
             .sorted((p1, p2) -> Integer.compare(p1.partNumber(), p2.partNumber()))
             .collect(Collectors.toList());
-
+    System.out.println("implementiong  CompletedMultipartUpload req...");
     CompletedMultipartUpload completedMultipartUpload = CompletedMultipartUpload.builder()
             .parts(parts)
             .build();
-
+    System.out.println("implementing CompleteMultipartUploadRequest....");
     CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder()
             .bucket(bucketName)
             .key(fileKey)
             .uploadId(uploadId)
             .multipartUpload(completedMultipartUpload)
             .build();
-
+    System.out.println("sending marge req....");
     s3Client.completeMultipartUpload(completeRequest);
+    System.out.println("marger req is sucessfull...");
 }
 }
