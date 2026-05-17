@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { data } from "react-router-dom";
 import { normalizeFileType } from "../components/UploadMovies";
+import {sliceFileForUpload,runWithConcurrencyLimit,createUploadTasks} from "./app.js";
 //const apiLink = import.meta.env.VITE_API_URL;
 const apiLink = "http://localhost:8080";
 
@@ -21,6 +22,110 @@ const Movie = {
   posterUrl: null,
 };
 */
+/**
+ * Orchestrator function to manage the entire 3-step multi-part upload process.
+ * 
+ * @param {File} file - The raw file object from the HTML input element.
+ * @param {Function} dispatch - The Redux dispatch function.
+ */
+export const handleVideoUploadOrchestrator = async (file, dispatch) => {
+  try {
+    // ==========================================
+    // PREPARATION: Slice the file into byte chunks
+    // ==========================================
+    const fileChunks = sliceFileForUpload(file); 
+    const totalParts = fileChunks.length;
+
+
+    // ==========================================
+    // STEP 1: Initiate Multi-part Upload
+    // ==========================================
+    // Dispatching the thunk to hit POST /initiate
+    const initiateResult = await dispatch(initiateMultiUploads({
+      fileName: file.name,
+      contentType: file.type || "video/mp4",
+      totalParts: totalParts
+    })).unwrap();
+
+    // Extract backend blueprint info
+    const { uploadId, fileKey, partsUrls } = initiateResult;
+
+
+    // ==========================================
+    // STEP 2: Parallelized Chunks Upload (PUT)
+    // ==========================================
+    // 1. Generate the array of Axios PUT tasks (independent helper)
+    const uploadTasks = createUploadTasks(fileChunks, partsUrls, file.type || "video/mp4");
+
+    // 2. Execute tasks with a limit of 4 parallel network connections
+    const CONCURRENCY_LIMIT = 4; 
+    const completedParts = await runWithConcurrencyLimit(CONCURRENCY_LIMIT, uploadTasks);
+
+    // 3. CRITICAL: Sort the resulting parts array sequentially by partNumber (Required by S3)
+    completedParts.sort((a, b) => a.partNumber - b.partNumber);
+
+
+    // ==========================================
+    // STEP 3: Complete Multi-part Upload
+    // ==========================================
+    // Dispatching the thunk to hit POST /complete
+    const completionResult = await dispatch(completeMultiUploads({
+      uploadId,
+      fileKey,
+      parts: completedParts // Array of { partNumber, eTag }
+    })).unwrap();
+
+    console.log("Upload Pipeline Completed Successfully:", completionResult);
+    return completionResult; // Will be "success" based on your API
+
+  } catch (error) {
+    console.error("Multi-part upload pipeline failed:", error);
+    // Handle UI errors or dispatch a failure state here if needed
+    throw error;
+  }
+};
+
+export const initiateMultiUploads = createAsyncThunk(
+  "movies/initiateMultiUploads",
+  async ({ fileName, totalParts, contentType }, thunkAPI) => {
+    const data = { fileName, totalParts, contentType };
+    const dispatch = thunkAPI.dispatch;
+    
+    try {
+      // 1. Update UI step status
+      dispatch(setStep("initiating multi-part upload request"));
+      const response = await API.post("/initiate", data);
+      return response.data;
+    } catch (err) {
+      return thunkAPI.rejectWithValue(err.message || "initiate request fail");
+    }
+  }
+);
+export const completeMultiUploads = createAsyncThunk(
+  "movies/completeMultiUploads",
+  async ({ uploadId, fileKey, parts }, thunkAPI) => {
+    const data = { uploadId, fileKey, parts };
+    const dispatch = thunkAPI.dispatch;
+
+    try {
+      // 1. Update UI step status
+      dispatch(setStep("finalizing multi-part upload"));
+
+      // 2. Send the completion request to the backend
+      const response = await API.post("/complete", data);
+
+      // 3. Handle Axios vs custom wrappers (use response.data if using Axios)
+      const result = response.data || response; 
+
+      // 4. Return the success response to the extraReducers
+      return result; // Expected payload: "success" or { res: "success" }
+
+    } catch (err) {
+      // 5. Catch network or server errors gracefully
+      return thunkAPI.rejectWithValue(err.response?.data?.message || err.message || "Finalize request failed");
+    }
+  }
+);
 
 export const uploadMovieFlow = createAsyncThunk(
   "movies/uploadMovieFlow",
