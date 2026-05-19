@@ -26,8 +26,8 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 
-//@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
-@CrossOrigin(origins = "http://localhost:5173/")
+@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
+//@CrossOrigin(origins = "http://localhost:5173/")
 @RestController
 @RequestMapping("/movies")
 public class MoviesController {
@@ -76,6 +76,23 @@ public class MoviesController {
 		return ResponseEntity.ok(Map.of(
 				"movieUrl", movieUrl, "posterUrl", posterUrl,
 				"movieKey", movieKey, "posterKey", posterKey));
+	}
+	@PostMapping("/prepare-url")
+	public ResponseEntity<?> getPutUrl(@RequestBody Map<String, String> request) {
+	    // Expect: { "fileName": "example.mp4", "contentType": "video/mp4" }
+	    String fileName = request.get("fileName");
+	    String contentType = request.get("contentType");
+
+	    // Generate unique key to avoid overwrites
+	    String objectKey = "large-uploads/"+UUID.randomUUID() + "_" + fileName;
+
+	    // Generate upload URL
+	    String uploadUrl = moviesService.getUploadUrl(objectKey, contentType);
+
+	    return ResponseEntity.ok(Map.of(
+	            "uploadUrl", uploadUrl,
+	            "objectKey", objectKey
+	    ));
 	}
 
 	@PostMapping("/confirm-save")
