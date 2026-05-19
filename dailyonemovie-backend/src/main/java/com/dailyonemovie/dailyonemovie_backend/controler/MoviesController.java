@@ -26,8 +26,7 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 
-@CrossOrigin(origins = "https://dailyonemovie.netlify.app")
-//@CrossOrigin(origins = "http://localhost:5173/")
+
 @RestController
 @RequestMapping("/movies")
 public class MoviesController {
