@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { upload } from "../store/movieSlice";
+import { upload } from "../store/moviesThunk";
 
 export default function UploadMovie() {
   const dispatch = useDispatch();

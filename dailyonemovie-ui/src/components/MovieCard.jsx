@@ -1,6 +1,6 @@
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { deleteMovieAndPoster } from "../store/movieSlice";
+import { deleteMovieAndPoster } from "../store/moviesThunk";
 
 export function MovieCard({ movie }) {
   const dispatch = useDispatch();

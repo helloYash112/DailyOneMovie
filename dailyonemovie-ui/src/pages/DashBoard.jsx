@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { useDispatch ,useSelector} from 'react-redux';
-import { fetchMovies } from '../store/movieSlice';
+import { fetchMovies } from '../store/moviesThunk.js';
 import { NavBar } from '../components/NavBar';
 import  UploadMovies  from '../components/UploadMovies.jsx';
 import { MovieList } from '../components/MovieList';
+
 
 export default function DashBoard() {
   const dispatch = useDispatch();

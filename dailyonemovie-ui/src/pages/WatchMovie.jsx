@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { getMovieURL } from '../store/movieSlice';
+import { getMovieURL } from '../store/moviesThunk';
 import { VideoPlayer } from '../components/VideoPlayer';
 
 export default function WatchMovie() {
