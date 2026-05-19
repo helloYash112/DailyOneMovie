@@ -6,8 +6,8 @@ import { sliceFileForUpload, runWithConcurrencyLimit, createUploadTasks,generate
 import { setMovieProgress, setError, setStep, setPosterProgress } from "./movieSlice.js";
 
 
-//const apiLink = import.meta.env.VITE_API_URL;
-const apiLink = "http://localhost:8080";
+const apiLink = import.meta.env.VITE_API_URL;
+//const apiLink = "http://localhost:8080";
 
 const API = axios.create({
   baseURL: apiLink,
