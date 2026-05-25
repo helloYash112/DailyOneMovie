@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import shaka from "shaka-player/dist/shaka-player.ui.js";
 import "shaka-player/dist/controls.css";
-import "@hevcjs/shaka-plugin";
+// Remove HEVC plugin unless you specifically need it
+// import "@hevcjs/shaka-plugin";
 
-// Attach Shaka namespace to window for casting/UI plugins
 if (typeof window !== "undefined" && !window.shaka) {
   window.shaka = shaka;
 }
@@ -11,8 +11,8 @@ if (typeof window !== "undefined" && !window.shaka) {
 export default function ShakaPlayer({
   src,
   playRangeStart = 0,
-  bufferingGoal = 30,
-  rebufferingGoal = 15,
+  bufferingGoal = 60,   // safer default
+  rebufferingGoal = 30, // smoother recovery
   autoPlay = true,
   muted = false,
   uiLocale = "en",
@@ -42,7 +42,6 @@ export default function ShakaPlayer({
   };
 
   useEffect(() => {
-    let isCancelled = false;
     let player = null;
     let ui = null;
     let statsInterval = null;
@@ -62,8 +61,7 @@ export default function ShakaPlayer({
         const container = containerRef.current;
         if (!video || !container) return;
 
-        player = new shaka.Player();
-        await player.attach(video);
+        player = new shaka.Player(video);
 
         ui = new shaka.ui.Overlay(player, container, video);
         ui.configure({
@@ -92,7 +90,9 @@ export default function ShakaPlayer({
           streaming: {
             bufferingGoal,
             rebufferingGoal,
-            lowLatencyMode: true,
+            lowLatencyMode: false, // disable unless live low-latency CMAF
+            jumpLargeGaps: true,
+            smallGapLimit: 0.5,
           },
         });
 
@@ -129,7 +129,20 @@ export default function ShakaPlayer({
             const active = tracks.find((t) => t.active);
             if (active && onActiveTrackChange) onActiveTrackChange(active);
           }
-        }, 1500);
+        }, 2000);
+
+        // Listen for buffering events
+        player.addEventListener("buffering", (event) => {
+          setIsBuffering(event.buffering);
+        });
+
+        // Listen for errors
+        player.addEventListener("error", (event) => {
+          const err = event.detail;
+          setInternalError(err.message || "Unknown error");
+          if (onError) onError(err);
+        });
+
       } catch (err) {
         setInternalError(`Init failed: ${err.message || err}`);
         if (onError) onError(err);
@@ -137,8 +150,8 @@ export default function ShakaPlayer({
     }
 
     initPlayer();
+
     return () => {
-      isCancelled = true;
       if (statsInterval) clearInterval(statsInterval);
       if (ui) ui.destroy();
       if (player) player.destroy();
@@ -157,7 +170,7 @@ export default function ShakaPlayer({
         />
         {isBuffering && (
           <span className="absolute top-4 left-4 bg-amber-500 text-black px-2 py-1 rounded">
-            Buffering
+            Buffering…
           </span>
         )}
         {internalError && (
@@ -172,3 +185,4 @@ export default function ShakaPlayer({
     </div>
   );
 }
+
