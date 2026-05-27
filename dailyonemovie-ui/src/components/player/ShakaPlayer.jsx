@@ -1,188 +1,334 @@
-import { useEffect, useRef, useState } from "react";
-import shaka from "shaka-player/dist/shaka-player.ui.js";
+import React, { useEffect, useRef } from "react";
+
+import shaka from "shaka-player/dist/shaka-player.ui";
+
 import "shaka-player/dist/controls.css";
-// Remove HEVC plugin unless you specifically need it
-// import "@hevcjs/shaka-plugin";
 
-if (typeof window !== "undefined" && !window.shaka) {
-  window.shaka = shaka;
-}
+const playerConfig = {
+  abr: {
+    enabled: true,
+    defaultBandwidthEstimate: 5000000,
+    switchInterval: 6,
+    bandwidthUpgradeTarget: 0.85,
+    bandwidthDowngradeTarget: 0.98,
+    droppedFrames: true,
+    clearBufferSwitch: false,
+    cacheLoadThreshold: 20,
+    minTimeToSwitch: 2,
+    useNetworkInformation: false,
+  },
 
-export default function ShakaPlayer({
-  src,
-  playRangeStart = 0,
-  bufferingGoal = 60,   // safer default
-  rebufferingGoal = 30, // smoother recovery
-  autoPlay = true,
-  muted = false,
-  uiLocale = "en",
-  preferredAudioLanguage = "",
-  preferredTextLanguage = "",
-  showSubtitles = false,
-  onStatsUpdate,
-  onTracksUpdate,
-  onActiveTrackChange,
-  onError,
-  onLog,
-  onStateChange,
-  onPlayerReady,
-}) {
+  streaming: {
+    lowLatencyMode: false,
+
+    bufferingGoal: 30,
+    rebufferingGoal: 8,
+    bufferBehind: 15,
+
+    segmentPrefetchLimit: 4,
+
+    stallEnabled: true,
+    stallThreshold: 0.8,
+    stallSkip: 0.05,
+
+    loadTimeout: 60,
+
+    retryParameters: {
+      maxAttempts: 5,
+      baseDelay: 1500,
+      backoffFactor: 2,
+      fuzzFactor: 0.5,
+      timeout: 90000,
+    },
+
+    allowMediaSourceRecoveries: true,
+
+    evictionGoal: 5,
+
+    stopFetchingOnPause: true,
+
+    safeSeekOffset: 3,
+
+    updateIntervalSeconds: 0.5,
+
+    observeQualityChanges: true,
+
+    preferNativeHls: false,
+    preferNativeDash: false,
+  },
+
+  manifest: {
+    continueLoadingWhenPaused: false,
+
+    retryParameters: {
+      maxAttempts: 5,
+      baseDelay: 1500,
+      backoffFactor: 2,
+      fuzzFactor: 0.5,
+      timeout: 90000,
+    },
+  },
+
+  mediaSource: {
+    codecSwitchingStrategy: "smooth",
+    forceTransmux: false,
+  },
+
+  cmcd: {
+    enabled: false,
+  },
+
+  cmsd: {
+    enabled: false,
+  },
+};
+
+const uiConfig = {
+  // BIG CENTER BUTTONS
+  bigButtons: ["play_pause"],
+
+  // MAIN CONTROL BAR
+  controlPanelElements: [
+    "rewind",
+    "play_pause",
+    "fast_forward",
+    "time_and_duration",
+    "spacer",
+    "mute",
+    "volume",
+    "fullscreen",
+    "overflow_menu",
+  ],
+
+  // OVERFLOW MENU
+  overflowMenuButtons: [
+    "playback_rate",
+    "picture_in_picture",
+    "quality",
+    "language",
+    "captions",
+    "statistics",
+  ],
+  seekBarColors: {
+  base: "rgba(255,255,255,0.15)",
+
+  buffered: "rgba(255,255,255,0.35)",
+
+  played: "#ffffff",
+
+  adBreaks: "#facc15",
+
+  chapters: "#22c55e",
+},
+customTrackLabel: (label, track, type) => {
+  const lang = label || track.language;
+
+  if (type === "audio") {
+    if (track.channelsCount === 6) {
+      return `🎵 ${lang} 5.1`;
+    }
+
+    return `🎵 ${lang} Stereo`;
+  }
+
+  if (type === "text") {
+    return `💬 ${lang} Subtitles`;
+  }
+
+  return lang;
+},
+
+  // PLAYBACK SPEEDS
+  playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+
+  // SEEK SETTINGS
+  addSeekBar: true,
+  seekOnTaps: true,
+  tapSeekDistance: 10,
+
+  keyboardSeekDistance: 5,
+  keyboardLargeSeekDistance: 10,
+
+  // UI EXPERIENCE
+  fadeDelay: 3000,
+  closeMenusDelay: 3000,
+
+  // INTERACTIONS
+  doubleClickForFullscreen: true,
+  singleClickForPlayAndPause: false,
+
+  // KEYBOARD CONTROLS
+  enableKeyboardPlaybackControls: true,
+  enableKeyboardPlaybackControlsInWindow: true,
+
+  // TOOLTIPS
+  enableTooltips: true,
+  captionsStyles:true,
+  captionsFontScaleFactors:[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+documentPictureInPicture: {
+  enabled: true,
+
+  // Opens PiP window in same place every time
+  preferInitialWindowPlacement: true,
+
+  // Keep return-to-tab button visible
+  disallowReturnToOpener: false,
+},
+qualityMarks: {
+  720: "HD",
+  1080: "FHD",
+  1440: "2K",
+  2160: "4K UHD",
+  4320: "8K UHD",
+},
+mediaSession: {
+  enabled: true,
+
+  // Automatically update media metadata
+  handleMetadata: true,
+
+  // Handle play/pause/seek actions
+  handleActions: true,
+
+  // Sync playback position
+  handlePosition: true,
+
+  // Supported controls
+  supportedActions: [
+    "play",
+    "pause",
+    "seekbackward",
+    "seekforward",
+    "previoustrack",
+    "nexttrack",
+  ],
+
+  // Allow browser automatic PiP behavior
+  allowAutoPiP: true,
+},
+
+  // VOLUME
+  alwaysShowVolumeBar: true,
+   volumeBarColors: {
+    base: "rgba(255,255,255,0.2)",
+    level: "#ffffff",
+  },
+ 
+
+  // BUFFER VISUALIZATION
+  showUnbufferedStart: true,
+
+  // TIME DISPLAY
+  allowTogglePresentationTime: true,
+  showRemainingTimeInPresentationTime: true,
+
+  // QUALITY SWITCHING
+  clearBufferOnQualityChange: false,
+
+  // MENU POSITION
+  showMenusOnTheRight: true,
+
+  // UI VISIBILITY
+  showUIOnPaused: true,
+  showUIAlways: false,
+
+  // MOBILE EXPERIENCE
+  enableFullscreenOnRotation: true,
+  forceLandscapeOnFullscreen: false,
+
+  
+
+  // BETTER TRACK LABELS
+  showAudioCodec: false,
+  showVideoCodec: false,
+
+  // ACCESSIBILITY
+  preferIntlDisplayNames: true,
+};
+
+const ShakaPlayer = ({ src }) => {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
 
-  const [playerInstance, setPlayerInstance] = useState(null);
-  const [uiInstance, setUiInstance] = useState(null);
-  const [internalError, setInternalError] = useState(null);
-  const [isBuffering, setIsBuffering] = useState(false);
-
-  const logMessage = (type, text) => {
-    if (onLog) {
-      onLog({ type, text, time: new Date().toLocaleTimeString() });
-    }
-  };
-
   useEffect(() => {
-    let player = null;
-    let ui = null;
-    let statsInterval = null;
+    let player;
+    let ui;
 
-    async function initPlayer() {
+    const initPlayer = async () => {
       try {
+        // Install polyfills
         shaka.polyfill.installAll();
 
+        // Browser support check
         if (!shaka.Player.isBrowserSupported()) {
-          const errMsg = "Browser not supported by Shaka Player";
-          setInternalError(errMsg);
-          if (onError) onError(new Error(errMsg));
+          console.error("Browser not supported!");
           return;
         }
 
         const video = videoRef.current;
         const container = containerRef.current;
-        if (!video || !container) return;
 
-        player = new shaka.Player(video);
+        // Create player
+        player = new shaka.Player();
 
+        // IMPORTANT
+        await player.attach(video);
+
+        // Configure player
+        player.configure(playerConfig);
+
+        // Create UI overlay
         ui = new shaka.ui.Overlay(player, container, video);
-        ui.configure({
-          enableTooltips: true,
-          addSeekBar: true,
-          controlPanelElements: [
-            "play_pause",
-            "time_and_duration",
-            "spacer",
-            "mute",
-            "volume",
-            "fullscreen",
-            "overflow_menu",
-          ],
-          overflowMenuButtons: [
-            "quality",
-            "language",
-            "captions",
-            "picture_in_picture",
-            "playback_rate",
-          ],
-        });
 
-        player.configure({
-          playRangeStart,
-          streaming: {
-            bufferingGoal,
-            rebufferingGoal,
-            lowLatencyMode: false, // disable unless live low-latency CMAF
-            jumpLargeGaps: true,
-            smallGapLimit: 0.5,
-          },
-        });
+        // Configure UI
+        ui.configure(uiConfig);
 
-        setPlayerInstance(player);
-        setUiInstance(ui);
-        if (onPlayerReady) onPlayerReady(player);
+        // Debug
+        window.player = player;
+        window.ui = ui;
 
-        if (src) {
-          await player.load(src);
-          if (autoPlay) {
-            video.muted = muted;
-            video.play().catch(() => {});
-          }
-        }
+        // Error handling
+        player.addEventListener("error", onErrorEvent);
 
-        statsInterval = setInterval(() => {
-          if (player && onStatsUpdate) {
-            const stats = player.getStats();
-            onStatsUpdate({
-              width: stats.width,
-              height: stats.height,
-              streamBandwidth: Math.round(stats.streamBandwidth / 1000),
-              decodedFrames: stats.decodedFrames,
-              droppedFrames: stats.droppedFrames,
-              playTime: stats.playTime,
-              bufferingTime: stats.bufferingTime,
-              loadTime: stats.loadTime,
-              estimatedBandwidth: Math.round(stats.estimatedBandwidth / 1000) || 0,
-            });
-          }
-          if (player && onTracksUpdate) {
-            const tracks = player.getVariantTracks();
-            onTracksUpdate(tracks);
-            const active = tracks.find((t) => t.active);
-            if (active && onActiveTrackChange) onActiveTrackChange(active);
-          }
-        }, 2000);
+        // Load video
+        await player.load(src);
 
-        // Listen for buffering events
-        player.addEventListener("buffering", (event) => {
-          setIsBuffering(event.buffering);
-        });
-
-        // Listen for errors
-        player.addEventListener("error", (event) => {
-          const err = event.detail;
-          setInternalError(err.message || "Unknown error");
-          if (onError) onError(err);
-        });
-
-      } catch (err) {
-        setInternalError(`Init failed: ${err.message || err}`);
-        if (onError) onError(err);
+        console.log("Video loaded successfully");
+      } catch (error) {
+        onError(error);
       }
-    }
+    };
+
+    const onErrorEvent = (event) => {
+      onError(event.detail);
+    };
+
+    const onError = (error) => {
+      console.error("Shaka Error", error);
+    };
 
     initPlayer();
 
     return () => {
-      if (statsInterval) clearInterval(statsInterval);
-      if (ui) ui.destroy();
-      if (player) player.destroy();
+      if (player) {
+        player.destroy();
+      }
     };
   }, [src]);
 
   return (
-    <div className="w-full relative bg-black rounded-2xl overflow-hidden border border-zinc-800 shadow-2xl">
-      <div id="shaka-video-container" ref={containerRef} className="w-full relative">
-        <video
-          id="shaka-video-element"
-          ref={videoRef}
-          className="w-full h-auto"
-          crossOrigin="anonymous"
-          playsInline
-        />
-        {isBuffering && (
-          <span className="absolute top-4 left-4 bg-amber-500 text-black px-2 py-1 rounded">
-            Buffering…
-          </span>
-        )}
-        {internalError && (
-          <span className="absolute top-4 left-4 bg-red-600 text-white px-2 py-1 rounded">
-            Error
-          </span>
-        )}
-      </div>
-      {internalError && (
-        <div className="p-4 bg-red-900 text-red-300 text-xs">{internalError}</div>
-      )}
+    <div
+      ref={containerRef}
+      className="w-full bg-black relative overflow-hidden rounded-xl"
+    >
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="w-full h-auto"
+      />
     </div>
   );
-}
+};
 
+export default ShakaPlayer;
