@@ -1,9 +1,12 @@
 package com.dailyonemovie.dailyonemovie_backend.controler;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompleteMultipartRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest;
@@ -39,7 +43,7 @@ public class MoviesController {
 
 	@PostMapping("/upload")
 	public ResponseEntity<MoviesDTO> uploadMovie(
-			@ModelAttribute MovieUploadRequest request) {
+			@ModelAttribute MovieUploadRequest request) throws IOException {
 		Movies movie = new Movies();
 
 		movie.setTitle(request.title());
@@ -105,12 +109,13 @@ public class MoviesController {
 
 
 
-	/** Upload a new movie + poster */
+	/** Upload a new movie + poster 
+	 * @throws IOException */
 	@PostMapping("/formupload")
 	public ResponseEntity<MoviesDTO> uploadMovie(@RequestParam("title") String title,
 			@RequestParam("genre") String genre,
 			@RequestParam("duration") int duration, @RequestParam("rating") double rating,
-			@RequestParam("movieFile") MultipartFile movieFile, @RequestParam("posterFile") MultipartFile posterFile) {
+			@RequestParam("movieFile") MultipartFile movieFile, @RequestParam("posterFile") MultipartFile posterFile) throws IOException {
 
 		Movies movie = new Movies();
 
@@ -187,4 +192,22 @@ public class MoviesController {
 
 	    return ResponseEntity.ok("success");
 	}
+	@PostMapping("/hls/upload")
+	public ResponseEntity<Map<String, Long>> upload(@ModelAttribute MovieUploadRequest request) throws IOException {
+	    Movies movie = moviesService.handleMovieUpload(request);
+	    return ResponseEntity.ok(Map.of("id", movie.getId()));
+	}
+
+
+    @GetMapping("/{id}/hls-stream")
+    public ResponseEntity<String> streamHlsMovie(@PathVariable Long id) {
+    	String url= moviesService.getHlsMovieByID(id);
+       return ResponseEntity.ok(url);
+    }
+
+    
+    @GetMapping("/{id}/status")
+    public ResponseEntity<MovieStatusDTO> getStatus(@PathVariable Long id) {
+        return ResponseEntity.ok(moviesService.getStatus(id));
+    }
 }

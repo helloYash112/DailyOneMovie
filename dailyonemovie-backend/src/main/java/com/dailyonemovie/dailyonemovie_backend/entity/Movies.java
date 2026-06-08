@@ -1,5 +1,6 @@
 package com.dailyonemovie.dailyonemovie_backend.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -16,7 +17,13 @@ public class Movies {
     private String title;      
     private String genre;     
     private int duration;       
-    private double rating;      
+    private double rating; 
+    @Column
+    private String status; // Enum: UPLOADING, CONVERTING, UPLOADING_TO_S3, READY, FAILED
+
+    @Column
+    private int progress; // 0–100
+
 
     // Store only the object keys (filenames in Backblaze)
     private String movieKey;    // e.g., "movie.mp4"

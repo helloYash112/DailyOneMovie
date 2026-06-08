@@ -1,17 +1,26 @@
 package com.dailyonemovie.dailyonemovie_backend.service;
 
+import java.io.File;
+import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
+import com.dailyonemovie.dailyonemovie_backend.entity.HlsMetadata;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
+import com.dailyonemovie.dailyonemovie_backend.repository.HlsMetadataRepository;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
 
 @Service
@@ -19,15 +28,25 @@ public class MoviesService {
 
 	private final MovieRepository moviesRepository;
 	private final MovieStorageService storageService;
+	private final HlsMetadataRepository hlsRepository;
+	private final TaskExecutor taskExecutor;
+	Movies movie=null;
 
-	public MoviesService(MovieRepository moviesRepository, MovieStorageService storageService) {
+	public MoviesService(MovieRepository moviesRepository, MovieStorageService storageService,
+			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor) {
 		this.moviesRepository = moviesRepository;
 		this.storageService = storageService;
+		this.hlsRepository = hlsrepo;
+		this.taskExecutor = taskExecutor;
 	}
 
-	/** Save metadata + upload files */
+	/**
+	 * Save metadata + upload files
+	 * 
+	 * @throws IOException
+	 */
 	@Transactional
-	public MoviesDTO saveMovie(Movies movie, MultipartFile movieFile, MultipartFile posterFile) {
+	public MoviesDTO saveMovie(Movies movie, MultipartFile movieFile, MultipartFile posterFile) throws IOException {
 
 		// Upload movie
 		storageService.uploadFile(movie.getMovieKey(), movieFile, movieFile.getContentType());
@@ -81,19 +100,29 @@ public class MoviesService {
 		}
 
 		return movies.stream().map(movie -> {
-			String movieUrl = null;
 			String posterUrl = null;
+			String playlistUrl = null;
+			String playlistKey = null;
 
-			if (movie.getMovieKey() != null) {
-				movieUrl = storageService.generatePresignedUrl(movie.getMovieKey(), Duration.ofHours(9));
-			}
-
+			// Poster presigned URL
 			if (movie.getPosterKey() != null) {
 				posterUrl = storageService.generatePresignedUrl(movie.getPosterKey(), Duration.ofHours(9));
 			}
 
+			// Lookup HLS metadata for this movie
+			Optional<HlsMetadata> hlsOpt = hlsRepository.findByMovie(movie);
+			if (hlsOpt.isPresent()) {
+				playlistKey = hlsOpt.get().getPlaylistKey();
+				playlistUrl = storageService.generatePresignedUrl(playlistKey, Duration.ofHours(9));
+			}
+
+			// Build DTO with correct mapping
 			return new MoviesDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
-					movie.getRating(), movie.getMovieKey(), movie.getPosterKey(), movieUrl, posterUrl);
+					movie.getRating(), movie.getPosterKey(), // stable poster key
+					posterUrl, // presigned poster URL
+					playlistKey, // stable playlist key
+					playlistUrl // presigned playlist URL
+			);
 		}).toList();
 	}
 
@@ -110,19 +139,102 @@ public class MoviesService {
 				storageService.generatePresignedUrl(movies.getPosterKey(), Duration.ofHours(9)));
 
 	}
-	public List<String> getListOfFileFromCloud(){
+
+	public List<String> getListOfFileFromCloud() {
 		return storageService.listFiles();
 	}
 
-    public MultipartInitResponse initiateMultipartUploadService(String fileName, int totalParts) {
-        return storageService.initiateMultipartUpload(fileName, totalParts);
-    }
+	public MultipartInitResponse initiateMultipartUploadService(String fileName, int totalParts) {
+		return storageService.initiateMultipartUpload(fileName, totalParts);
+	}
 
 	public void completeMultipartUploadService(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
 		System.out.println("i am in movie service class and calling movie storage service class method....");
-		
-     storageService.completeMultipartUpload(fileKey, uploadId, completedParts);
-	
+
+		storageService.completeMultipartUpload(fileKey, uploadId, completedParts);
+
 	}
 
+	public String getHlsMovieByID(Long id) {
+		Movies movie = moviesRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
+
+		HlsMetadata hls = hlsRepository.findByMovie(movie)
+				.orElseThrow(() -> new RuntimeException("HLS metadata not found"));
+
+		// Generate presigned GET URL for playlist.m3u8
+
+		String presignedUrl = storageService.generatePresignedUrl(hls.getPlaylistKey(), Duration.ofHours(9));
+		return presignedUrl;
+	}
+
+
+	// orchester for convert and upload m3ud file
+	public Movies handleMovieUpload(MovieUploadRequest request) throws IOException {
+        // Step 1: Upload poster immediately
+        String posterKey = "posters/" + UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
+        storageService.uploadFile(posterKey, request.posterFile(), request.posterFile().getContentType());
+
+        // Step 2: Persist Movie entity
+        movie = new Movies();
+        movie.setTitle(request.title());
+        movie.setGenre(request.genre());
+        movie.setDuration(request.duration());
+        movie.setRating(request.rating());
+        movie.setPosterKey(posterKey);
+        movie.setStatus("UPLOADING");
+        movie.setProgress(0);
+        movie = moviesRepository.saveAndFlush(movie);
+
+        // Step 3: Copy movie file to safe temp location
+        File safeCopy = File.createTempFile("movie_" + movie.getId(), ".mp4");
+        request.movieFile().transferTo(safeCopy);
+
+        // Step 4: Kick off background processing with safe copy
+        taskExecutor.execute(() -> processMovieAsync(safeCopy, movie));
+
+        // Step 5: Return DTO immediately
+        String posterUrl = storageService.generatePresignedUrl(posterKey, Duration.ofHours(9));
+        return movie;
+    }
+
+    private void processMovieAsync(File movieFile, Movies movie) {
+        try {
+            updateStatus(movie, "CONVERTING", 10);
+
+           String playlistUrl = storageService.convertToHlsFile(
+                movieFile,
+                movie.getId(),
+                progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
+            );
+            /*
+            String playlistUrl = storageService.uploadHlsFileToCloud(
+            		movieFile, 
+            		movie.getId(),
+            		progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
+            		);*/
+
+            HlsMetadata hlsMetadata = new HlsMetadata();
+            hlsMetadata.setMovie(movie);
+            hlsMetadata.setPlaylistKey("hls/" + movie.getId() + "/playlist.m3u8");
+            hlsMetadata.setCreatedAt(Instant.now());
+            hlsRepository.save(hlsMetadata);
+
+            updateStatus(movie, "READY", 100);
+        } catch (Exception e) {
+            e.printStackTrace();
+            updateStatus(movie, "FAILED", 0);
+        } finally {
+            if (movieFile.exists()) movieFile.delete();
+        }
+    }
+    public void updateStatus(Movies movie, String status, int progress) {
+        movie.setStatus(status);
+        movie.setProgress(progress);
+        moviesRepository.save(movie);
+    }
+
+    public MovieStatusDTO getStatus(Long id) {
+        Movies movie = moviesRepository.findById(id).orElseThrow();
+        return new MovieStatusDTO(movie.getId(), movie.getStatus(), movie.getProgress());
+    }
 }

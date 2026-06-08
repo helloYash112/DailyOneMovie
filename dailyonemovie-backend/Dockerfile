@@ -14,6 +14,11 @@ FROM eclipse-temurin:17-jdk
 
 WORKDIR /app
 
+# Install FFmpeg (added to PATH automatically)
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/target/*.jar app.jar
 
 ENV PORT=8080
