@@ -1,6 +1,18 @@
 import { createSlice } from "@reduxjs/toolkit";
-import {uploadMoviePipeline,initiateMultiUploads,completeMultiUploads,uploadMovieFlow,getUploadURL,uploadToCloudWithProgress,
-  saveMovie,upload,getMovieURL,getPosterURL,fetchMovies,deleteMovieAndPoster,
+import {
+  uploadMoviePipeline,
+  initiateMultiUploads,
+  completeMultiUploads,
+  uploadMovieFlow,
+  getUploadURL,
+  uploadToCloudWithProgress,
+  saveMovie,
+  upload,
+  getMovieURL,
+  getPosterURL,
+  fetchMovies,
+  deleteMovieAndPoster,
+  uploadHlsMovie
 } from "./moviesThunk";
 
 /*
@@ -19,19 +31,23 @@ const Movie = {
 
 const moviesSlice = createSlice({
   name: "movies",
-  initialState: {
-    movies: [],
+  initialState :{
+  movies: [],
 
-    status: "idle",
-    // idle | loading | uploading | saving | success | fail
+  // Upload lifecycle
+  status: "idle", // idle | uploading | success | fail
+  currentMovieId: null,
 
-    error: null,
+  // Fetch lifecycle
+  fetchStatus: "idle", // idle | loading | success | fail
 
-    movieProgress: 0,
-    posterProgress: 0,
+  error: null,
 
-    currentStep: "",
-  },
+  movieProgress: 0,
+  posterProgress: 0,
+
+  currentStep: "",
+},
 
   reducers: {
     addMovie: (state, action) => {
@@ -235,6 +251,18 @@ const moviesSlice = createSlice({
         state.status = "fail";
         state.error = action.payload;
         state.currentStep = "Upload failed";
+      })
+      .addCase(uploadHlsMovie.pending, (state) => {
+        state.status = "uploading";
+        state.error = null;
+      })
+      .addCase(uploadHlsMovie.fulfilled, (state, action) => {
+        state.status = "success";
+        state.currentMovieId = action.payload.id; // store returned id
+      })
+      .addCase(uploadHlsMovie.rejected, (state, action) => {
+        state.status = "fail";
+        state.error = action.payload;
       });
   },
 });

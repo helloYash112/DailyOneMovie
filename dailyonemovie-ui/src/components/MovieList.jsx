@@ -6,8 +6,8 @@ export function MovieList() {
     (state) => state.movies || {}
   );
 
-//  console.log("movies:", movies);
-//  console.log("type of movie:", typeof movies);
+ //console.log("movies:", movies);
+// console.log("type of movie:", typeof movies);
 
   if (status === "loading") {
     return <p>Loading movies...</p>;

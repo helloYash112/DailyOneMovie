@@ -120,6 +120,7 @@ const uiConfig = {
 
   chapters: "#22c55e",
 },
+/*
 customTrackLabel: (label, track, type) => {
   const lang = label || track.language;
 
@@ -136,7 +137,7 @@ customTrackLabel: (label, track, type) => {
   }
 
   return lang;
-},
+},*/
 
   // PLAYBACK SPEEDS
   playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
@@ -155,7 +156,7 @@ customTrackLabel: (label, track, type) => {
 
   // INTERACTIONS
   doubleClickForFullscreen: true,
-  singleClickForPlayAndPause: false,
+  singleClickForPlayAndPause: true,
 
   // KEYBOARD CONTROLS
   enableKeyboardPlaybackControls: true,
@@ -172,7 +173,7 @@ documentPictureInPicture: {
   preferInitialWindowPlacement: true,
 
   // Keep return-to-tab button visible
-  disallowReturnToOpener: false,
+  disallowReturnToOpener: true,
 },
 qualityMarks: {
   720: "HD",
@@ -208,7 +209,7 @@ mediaSession: {
 },
 
   // VOLUME
-  alwaysShowVolumeBar: true,
+  alwaysShowVolumeBar: false,
    volumeBarColors: {
     base: "rgba(255,255,255,0.2)",
     level: "#ffffff",
@@ -245,6 +246,7 @@ mediaSession: {
   // ACCESSIBILITY
   preferIntlDisplayNames: true,
 };
+
 
 const ShakaPlayer = ({ src }) => {
   const videoRef = useRef(null);

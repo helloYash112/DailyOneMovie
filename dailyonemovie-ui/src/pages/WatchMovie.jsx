@@ -9,6 +9,7 @@ import ShakaPlayer from '../components/player/ShakaPlayer';
 export default function WatchMovie() {
   const { id } = useParams();
   const dispatch = useDispatch();
+  ///console.log(id);
   
 
   const movie = useSelector((state) =>
@@ -29,13 +30,13 @@ export default function WatchMovie() {
     }
   }, [dispatch, id, movie]);
 
-  if (!movie?.movieUrl) return <p>Loading movie...</p>;
+  if (!movie?.playlistUrl) return <p>Loading movie...</p>;
 
 //<VideoPlayer src={movie.movieUrl} />
   return (
     <div className='p-6 bg-black'>
     
-      <ShakaPlayer src={movie.movieUrl} />
+      <ShakaPlayer src={movie.playlistUrl} />
     </div>
   );
 }

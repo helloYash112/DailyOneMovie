@@ -6,13 +6,41 @@ import { sliceFileForUpload, runWithConcurrencyLimit, createUploadTasks,generate
 import { setMovieProgress, setError, setStep, setPosterProgress } from "./movieSlice.js";
 
 
-//const apiLink = import.meta.env.VITE_API_URL;
+const apiLink = import.meta.env.VITE_API_URL;
 //const apiLink = "http://localhost:8080";
 
-const API = axios.create({
-  baseURL: "https://dailyonemovie.onrender.com",
+export const  API = axios.create({
+  baseURL: apiLink,
 });
 
+// Async thunk for uploading a rawmp4 and converting to hls fil
+export const uploadHlsMovie = createAsyncThunk(
+  "movies/uploadHlsMovie",
+  async (movieData, { dispatch, rejectWithValue }) => {
+    try {
+      const formData = new FormData();
+      formData.append("title", movieData.title);
+      formData.append("genre", movieData.genre);
+      formData.append("duration", movieData.duration);
+      formData.append("rating", movieData.rating);
+      formData.append("movieFile", movieData.movieFile);
+      formData.append("posterFile", movieData.posterFile);
+
+      const response = await API.post("/movies/hls/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          // You can split progress between poster and movie if needed
+          dispatch(setMovieProgress(percent));
+        },
+      });
+
+      return response.data; // DTO from backend
+    } catch (err) {
+      return rejectWithValue(err.response?.data || err.message);
+    }
+  }
+);
 export const uploadMoviePipeline = createAsyncThunk(
   "movies/uploadMoviePipeline",
   async ({ title, genre, duration, rating, movieFile, posterFile }, thunkAPI) => {
@@ -299,7 +327,7 @@ export const getMovieURL = createAsyncThunk(
   "movies/getMovieURL",
   async (id, thunkAPI) => {
     try {
-      const response = await API.get(`/movies/${id}/stream`);
+      const response = await API.get(`/movies/${id}/hls-stream`);
 
       return {
         id,
