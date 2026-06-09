@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -31,6 +32,9 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -38,6 +42,7 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
 
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -49,6 +54,7 @@ import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -384,4 +390,49 @@ public class MovieStorageService {
 		return generatePresignedUrl("hls/" + movieId + "/playlist.m3u8", Duration.ofHours(9));
 	}
 
+	//working on hls presigned url
+	 public String getOriginalManifest(String manifestKey) {
+        GetObjectRequest getReq = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(manifestKey)
+                .build();
+
+        try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getReq);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object))) {
+            return reader.lines().collect(Collectors.joining("\n"));
+        } catch (IOException e) {
+            throw new RuntimeException("Error reading manifest", e);
+        }
+    }
+
+
+	public Map<String, String> getPresignedUrlsForSegments(String prefix) {
+        ListObjectsV2Request listReq = ListObjectsV2Request.builder()
+                .bucket(bucketName)
+                .prefix(prefix)
+                .build();
+
+        ListObjectsV2Response listRes = s3Client.listObjectsV2(listReq);
+
+        Map<String, String> urlMap = new HashMap<>();
+        for (S3Object obj : listRes.contents()) {
+            if (obj.key().endsWith(".ts")) {
+                GetObjectRequest getReq = GetObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(obj.key())
+                        .build();
+
+                PresignedGetObjectRequest presignedRequest =
+                         s3Presigner.presignGetObject(r -> r.getObjectRequest(getReq)
+                                .signatureDuration(Duration.ofMinutes(60)));
+
+                // store mapping original filename -> presigned URL
+                String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1);
+                urlMap.put(fileName, presignedRequest.url().toString());
+            }
+        }
+        return urlMap;
+    }
+
+	
 }

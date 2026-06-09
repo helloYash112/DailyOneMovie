@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -236,5 +237,38 @@ public class MoviesService {
     public MovieStatusDTO getStatus(Long id) {
         Movies movie = moviesRepository.findById(id).orElseThrow();
         return new MovieStatusDTO(movie.getId(), movie.getStatus(), movie.getProgress());
+    }
+	//functopn for get menifet url 
+	public String buildPresignedManifest(Long id) {
+        // Step 1: Lookup metadata in Postgres
+		Movies movie = moviesRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
+
+		HlsMetadata hls = hlsRepository.findByMovie(movie)
+				.orElseThrow(() -> new RuntimeException("HLS metadata not found"));
+
+       
+
+        String manifestKey = hls.getPlaylistKey(); // e.g. "hls/6/playlist.m3u8"
+        String prefix = manifestKey.substring(0, manifestKey.lastIndexOf("/") + 1); // "hls/6/"
+
+        // Step 2: Get original manifest
+        String manifest = storageService.getOriginalManifest(manifestKey);
+
+        // Step 3: Generate presigned URLs for segments
+        Map<String, String> presignedMap = storageService.getPresignedUrlsForSegments(prefix);
+
+        // Step 4: Rewrite manifest
+        StringBuilder rewritten = new StringBuilder();
+        for (String line : manifest.split("\n")) {
+            if (line.endsWith(".ts")) {
+                String fileName = line.trim();
+                String presignedUrl = presignedMap.get(fileName);
+                rewritten.append(presignedUrl != null ? presignedUrl : line).append("\n");
+            } else {
+                rewritten.append(line).append("\n");
+            }
+        }
+
+        return rewritten.toString();
     }
 }

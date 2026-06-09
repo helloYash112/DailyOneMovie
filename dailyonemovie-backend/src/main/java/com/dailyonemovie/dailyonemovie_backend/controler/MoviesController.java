@@ -210,4 +210,10 @@ public class MoviesController {
     public ResponseEntity<MovieStatusDTO> getStatus(@PathVariable Long id) {
         return ResponseEntity.ok(moviesService.getStatus(id));
     }
+
+	 @GetMapping(value = "/{movieKey}/stream", produces = "application/vnd.apple.mpegurl")
+    public ResponseEntity<String> getManifest(@PathVariable Long movieKey) {
+        String manifest = moviesService.buildPresignedManifest(movieKey);
+        return ResponseEntity.ok(manifest);
+    }
 }
