@@ -5,6 +5,7 @@ import { deleteMovieAndPoster } from "../store/moviesThunk";
 export function MovieCard({ movie }) {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
   return (
     <div className="relative rounded-md overflow-hidden bg-black shadow-lg transition duration-300 hover:scale-105">
       {/* Poster */}
@@ -28,18 +29,20 @@ export function MovieCard({ movie }) {
         </p>
 
         <div className="flex gap-2 mt-3">
+          {/* Play button navigates to WatchMovie */}
           <button
             onClick={() => navigate(`/watch/${movie.id}`)}
             className="flex-1 px-3 py-2 bg-white text-black text-xs font-semibold rounded"
           >
-            Play
+            ▶ Play
           </button>
 
+          {/* Delete button dispatches Redux thunk */}
           <button
             onClick={() => dispatch(deleteMovieAndPoster(movie.id))}
-            className="px-3 py-2 border border-gray-600 text-xs text-white rounded"
+            className="px-3 py-2 border border-gray-600 text-xs text-white rounded hover:bg-red-600 hover:border-red-600"
           >
-            ✕
+            ✕ Delete
           </button>
         </div>
       </div>

@@ -22,6 +22,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompleteMultipartRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
@@ -165,7 +166,7 @@ public class MoviesController {
 	// getting all movies from database
 
 	@GetMapping
-	public ResponseEntity<List<MoviesDTO>> fetchMovies() {
+	public ResponseEntity<List<HlsDTO>> fetchMovies() {
 		return ResponseEntity.ok(moviesService.fetchMovies());
 	}
 	@GetMapping("/all/movies")

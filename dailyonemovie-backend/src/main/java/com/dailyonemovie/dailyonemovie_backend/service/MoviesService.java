@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
@@ -93,7 +94,7 @@ public class MoviesService {
 		moviesRepository.delete(movie);
 	}
 
-	public List<MoviesDTO> fetchMovies() {
+	public List<HlsDTO> fetchMovies() {
 		List<Movies> movies = moviesRepository.findAll();
 
 		if (movies == null || movies.isEmpty()) {
@@ -102,7 +103,6 @@ public class MoviesService {
 
 		return movies.stream().map(movie -> {
 			String posterUrl = null;
-			String playlistUrl = null;
 			String playlistKey = null;
 
 			// Poster presigned URL
@@ -114,15 +114,13 @@ public class MoviesService {
 			Optional<HlsMetadata> hlsOpt = hlsRepository.findByMovie(movie);
 			if (hlsOpt.isPresent()) {
 				playlistKey = hlsOpt.get().getPlaylistKey();
-				playlistUrl = storageService.generatePresignedUrl(playlistKey, Duration.ofHours(9));
 			}
 
 			// Build DTO with correct mapping
-			return new MoviesDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
+			return new HlsDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
 					movie.getRating(), movie.getPosterKey(), // stable poster key
 					posterUrl, // presigned poster URL
-					playlistKey, // stable playlist key
-					playlistUrl // presigned playlist URL
+					playlistKey // stable playlist key
 			);
 		}).toList();
 	}
@@ -253,41 +251,9 @@ public class MoviesService {
                         manifestKey.lastIndexOf("/") + 1
                 );
 
-        String manifest =
-                storageService.getOriginalManifest(
-                        manifestKey
-                );
-
-        Map<String, String> presignedUrls =
-                storageService.getPresignedUrlsForSegments(
-                        prefix
-                );
-
-        StringBuilder rewritten =
-                new StringBuilder();
-
-        for (String line : manifest.split("\n")) {
-
-            String trimmed = line.trim();
-
-            if (trimmed.endsWith(".ts")) {
-
-                String presignedUrl =
-                        presignedUrls.get(trimmed);
-
-                rewritten.append(
-                        presignedUrl != null
-                                ? presignedUrl
-                                : trimmed
-                ).append("\n");
-
-            } else {
-
-                rewritten.append(line)
-                        .append("\n");
-            }
-        }
-
-        return rewritten.toString();
+        return storageService.buildPresignedManifest(manifestKey,prefix);
     }
+ 
+   
+
 }
