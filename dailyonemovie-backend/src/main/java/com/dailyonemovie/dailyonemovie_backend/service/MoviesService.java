@@ -170,7 +170,7 @@ public class MoviesService {
 
 
 	// orchester for convert and upload m3ud file
-	public Movies handleMovieUpload(MovieUploadRequest request) throws IOException {
+	public Map<Long,String> handleMovieUpload(MovieUploadRequest request) throws IOException {
         // Step 1: Upload poster immediately
         String posterKey = "posters/" + UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
         storageService.uploadFile(posterKey, request.posterFile(), request.posterFile().getContentType());
@@ -195,28 +195,24 @@ public class MoviesService {
 
         // Step 5: Return DTO immediately
         String posterUrl = storageService.generatePresignedUrl(posterKey, Duration.ofHours(9));
-        return movie;
+        
+        return Map.of(movie.getId(),"Success");
     }
 
     private void processMovieAsync(File movieFile, Movies movie) {
         try {
             updateStatus(movie, "CONVERTING", 10);
 
-           String playlistUrl = storageService.convertToHlsFile(
+           String playlistUrl = storageService.uploadHlsFileToCloud(
                 movieFile,
                 movie.getId(),
                 progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
             );
-            /*
-            String playlistUrl = storageService.uploadHlsFileToCloud(
-            		movieFile, 
-            		movie.getId(),
-            		progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
-            		);*/
+           
 
             HlsMetadata hlsMetadata = new HlsMetadata();
             hlsMetadata.setMovie(movie);
-            hlsMetadata.setPlaylistKey("hls/" + movie.getId() + "/playlist.m3u8");
+            hlsMetadata.setPlaylistKey(playlistUrl);
             hlsMetadata.setCreatedAt(Instant.now());
             hlsRepository.save(hlsMetadata);
 
@@ -238,34 +234,57 @@ public class MoviesService {
         Movies movie = moviesRepository.findById(id).orElseThrow();
         return new MovieStatusDTO(movie.getId(), movie.getStatus(), movie.getProgress());
     }
-	//functopn for get menifet url 
-	public String buildPresignedManifest(Long id) {
-        // Step 1: Lookup metadata in Postgres
-		Movies movie = moviesRepository.findById(id).orElseThrow(() -> new RuntimeException("Movie not found"));
+	//function for get manifest url 
+    public String buildPresignedManifest(Long movieId) {
 
-		HlsMetadata hls = hlsRepository.findByMovie(movie)
-				.orElseThrow(() -> new RuntimeException("HLS metadata not found"));
+        Movies movie = moviesRepository.findById(movieId)
+                .orElseThrow(() ->
+                        new RuntimeException("Movie not found"));
 
-       
+        HlsMetadata hls = hlsRepository.findByMovie(movie)
+                .orElseThrow(() ->
+                        new RuntimeException("HLS metadata not found"));
 
-        String manifestKey = hls.getPlaylistKey(); // e.g. "hls/6/playlist.m3u8"
-        String prefix = manifestKey.substring(0, manifestKey.lastIndexOf("/") + 1); // "hls/6/"
+        String manifestKey = hls.getPlaylistKey();
 
-        // Step 2: Get original manifest
-        String manifest = storageService.getOriginalManifest(manifestKey);
+        String prefix =
+                manifestKey.substring(
+                        0,
+                        manifestKey.lastIndexOf("/") + 1
+                );
 
-        // Step 3: Generate presigned URLs for segments
-        Map<String, String> presignedMap = storageService.getPresignedUrlsForSegments(prefix);
+        String manifest =
+                storageService.getOriginalManifest(
+                        manifestKey
+                );
 
-        // Step 4: Rewrite manifest
-        StringBuilder rewritten = new StringBuilder();
+        Map<String, String> presignedUrls =
+                storageService.getPresignedUrlsForSegments(
+                        prefix
+                );
+
+        StringBuilder rewritten =
+                new StringBuilder();
+
         for (String line : manifest.split("\n")) {
-            if (line.endsWith(".ts")) {
-                String fileName = line.trim();
-                String presignedUrl = presignedMap.get(fileName);
-                rewritten.append(presignedUrl != null ? presignedUrl : line).append("\n");
+
+            String trimmed = line.trim();
+
+            if (trimmed.endsWith(".ts")) {
+
+                String presignedUrl =
+                        presignedUrls.get(trimmed);
+
+                rewritten.append(
+                        presignedUrl != null
+                                ? presignedUrl
+                                : trimmed
+                ).append("\n");
+
             } else {
-                rewritten.append(line).append("\n");
+
+                rewritten.append(line)
+                        .append("\n");
             }
         }
 

@@ -193,9 +193,8 @@ public class MoviesController {
 	    return ResponseEntity.ok("success");
 	}
 	@PostMapping("/hls/upload")
-	public ResponseEntity<Map<String, Long>> upload(@ModelAttribute MovieUploadRequest request) throws IOException {
-	    Movies movie = moviesService.handleMovieUpload(request);
-	    return ResponseEntity.ok(Map.of("id", movie.getId()));
+	public ResponseEntity<Map<Long,String>> upload(@ModelAttribute MovieUploadRequest request) throws IOException {
+	    return ResponseEntity.ok(moviesService.handleMovieUpload(request));
 	}
 
 
@@ -211,9 +210,21 @@ public class MoviesController {
         return ResponseEntity.ok(moviesService.getStatus(id));
     }
 
-	 @GetMapping(value = "/{movieKey}/stream", produces = "application/vnd.apple.mpegurl")
-    public ResponseEntity<String> getManifest(@PathVariable Long movieKey) {
-        String manifest = moviesService.buildPresignedManifest(movieKey);
-        return ResponseEntity.ok(manifest);
+    @GetMapping(
+            value = "{id}/manifest",
+            produces = "application/vnd.apple.mpegurl"
+    )
+    public ResponseEntity<String> getManifest(
+            @PathVariable Long id) {
+
+        String manifest =
+                moviesService.buildPresignedManifest(id);
+
+        return ResponseEntity.ok()
+                .header(
+                        "Cache-Control",
+                        "no-store, no-cache, must-revalidate"
+                )
+                .body(manifest);
     }
 }

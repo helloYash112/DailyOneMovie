@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -265,131 +266,206 @@ public class MovieStorageService {
 	}
 
 	// option 2 to upload hls file
-	public String uploadHlsFileToCloud(File inputFile, Long movieId, Consumer<Integer> progressCallback)
-			throws Exception {
+	public String uploadHlsFileToCloud(
+	        File inputFile,
+	        Long movieId,
+	        Consumer<Integer> progressCallback)
+	        throws Exception {
 
-		progressCallback.accept(5);
+	    progressCallback.accept(5);
 
-		// ==========================
-		// Generate HLS
-		// ==========================
+	    // ------------------------------------
+	    // Generate HLS
+	    // ------------------------------------
+	    String outputDir =
+	            Files.createTempDirectory("hls").toString();
 
-		String outputDir = Files.createTempDirectory("hls").toString();
+	    ProcessBuilder pb = new ProcessBuilder(
+	            "ffmpeg",
+	            "-i", inputFile.getAbsolutePath(),
 
-		ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", inputFile.getAbsolutePath(), "-c:v", "libx264",
-				"-preset", "veryfast", "-b:v", "800k", "-c:a", "aac", "-b:a", "96k", "-hls_time", "20",
-				"-hls_list_size", "0", "-f", "hls", outputDir + "/playlist.m3u8");
+	            "-c:v", "libx264",
+	            "-preset", "veryfast",
 
-		pb.redirectErrorStream(true);
+	            "-c:a", "aac",
 
-		Process process = pb.start();
+	            "-hls_time", "10",
+	            "-hls_list_size", "0",
 
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+	            "-f", "hls",
+	            outputDir + "/playlist.m3u8"
+	    );
 
-			String line;
+	    pb.redirectErrorStream(true);
 
-			while ((line = reader.readLine()) != null) {
-				System.out.println(line);
-			}
-		}
+	    Process process = pb.start();
 
-		int exitCode = process.waitFor();
+	    try (BufferedReader reader =
+	                 new BufferedReader(
+	                         new InputStreamReader(
+	                                 process.getInputStream()))) {
 
-		if (exitCode != 0) {
-			throw new RuntimeException("FFmpeg conversion failed");
-		}
+	        reader.lines().forEach(System.out::println);
+	    }
 
-		progressCallback.accept(30);
+	    int ffmpegExitCode = process.waitFor();
 
-		// ==========================
-		// Load Files
-		// ==========================
+	    if (ffmpegExitCode != 0) {
+	        throw new RuntimeException(
+	                "FFmpeg conversion failed. Exit code: "
+	                        + ffmpegExitCode
+	        );
+	    }
 
-		File[] files = new File(outputDir).listFiles();
+	    progressCallback.accept(10);
 
-		if (files == null || files.length == 0) {
-			throw new RuntimeException("No HLS files generated");
-		}
+	    // ------------------------------------
+	    // Collect generated files
+	    // ------------------------------------
+	    File[] files =
+	            new File(outputDir).listFiles();
 
-		long totalSegments = Arrays.stream(files).filter(f -> f.getName().endsWith(".ts")).count();
+	    if (files == null || files.length == 0) {
+	        throw new RuntimeException(
+	                "No HLS files generated"
+	        );
+	    }
 
-		System.out.println("Total files: " + files.length);
-		System.out.println("Total segments: " + totalSegments);
+	    System.out.println(
+	            "Generated HLS files: "
+	                    + files.length
+	    );
 
-		AtomicInteger uploadedSegments = new AtomicInteger();
+	    // ------------------------------------
+	    // Upload files concurrently
+	    // ------------------------------------
+	    AtomicInteger uploadedFiles =
+	            new AtomicInteger(0);
 
-		// Limit active uploads
-		Semaphore semaphore = new Semaphore(5);
+	    int totalFiles = files.length;
 
-		List<CompletableFuture<Void>> futures = new ArrayList<>();
+	    ExecutorService executor =
+	            Executors.newFixedThreadPool(8);
 
-		for (File file : files) {
+	    List<CompletableFuture<Void>> uploadTasks =
+	            new ArrayList<>();
 
-			semaphore.acquire();
+	    for (File file : files) {
 
-			String key = "playlist.m3u8".equals(file.getName()) ? "hls/" + movieId + "/playlist.m3u8"
-					: "hls/" + movieId + "/" + file.getName();
+	        CompletableFuture<Void> task =
+	                CompletableFuture.runAsync(() -> {
 
-			PutObjectRequest request = PutObjectRequest.builder().bucket(bucketName).key(key).build();
+	                    try {
 
-			CompletableFuture<Void> future = s3AsyncClient.putObject(request, AsyncRequestBody.fromFile(file.toPath()))
-					.thenAccept(response -> {
+	                        String key =
+	                                "hls/"
+	                                        + movieId
+	                                        + "/"
+	                                        + file.getName();
 
-						if (file.getName().endsWith(".ts")) {
+	                        System.out.println(
+	                                "Uploading: "
+	                                        + file.getName()
+	                                        + " ("
+	                                        + file.length()
+	                                        + " bytes)"
+	                        );
 
-							int uploaded = uploadedSegments.incrementAndGet();
+	                        s3Client.putObject(
+	                                PutObjectRequest.builder()
+	                                        .bucket(bucketName)
+	                                        .key(key)
+	                                        .build(),
 
-							int progress = 30 + (int) ((uploaded * 65.0) / totalSegments);
+	                                RequestBody.fromFile(file)
+	                        );
 
-							progressCallback.accept(progress);
+	                        System.out.println(
+	                                "Uploaded: "
+	                                        + file.getName()
+	                        );
 
-							System.out.println("Uploaded " + uploaded + "/" + totalSegments + " -> " + file.getName());
-						}
-					}).whenComplete((r, e) -> {
-						semaphore.release();
+	                        int current =
+	                                uploadedFiles.incrementAndGet();
 
-						if (e != null) {
-							System.err.println("Upload failed: " + file.getName());
-							e.printStackTrace();
-						}
-					});
+	                        int progress =
+	                                10 +
+	                                        (int) (
+	                                                (current /
+	                                                        (double) totalFiles)
+	                                                        * 85
+	                                        );
 
-			futures.add(future);
-		}
+	                        progressCallback.accept(
+	                                Math.min(progress, 95)
+	                        );
 
-		try {
+	                    } catch (Exception ex) {
 
-			CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+	                        System.err.println(
+	                                "Upload failed for: "
+	                                        + file.getName()
+	                        );
 
-		} catch (Exception e) {
+	                        ex.printStackTrace();
 
-			throw new RuntimeException("HLS upload failed", e);
-		}
+	                        throw new RuntimeException(ex);
+	                    }
 
-		progressCallback.accept(95);
+	                }, executor);
 
-		// ==========================
-		// Cleanup Temp Files
-		// ==========================
+	        uploadTasks.add(task);
+	    }
 
-		try {
+	    // ------------------------------------
+	    // Wait for all uploads
+	    // ------------------------------------
+	    CompletableFuture.allOf(
+	            uploadTasks.toArray(
+	                    new CompletableFuture[0]
+	            )
+	    ).join();
 
-			for (File file : files) {
-				Files.deleteIfExists(file.toPath());
-			}
+	    executor.shutdown();
 
-			Files.deleteIfExists(Paths.get(outputDir));
+	    if (!executor.awaitTermination(
+	            1,
+	            TimeUnit.HOURS)) {
 
-		} catch (Exception cleanupError) {
+	        executor.shutdownNow();
+	    }
 
-			System.err.println("Cleanup failed: " + cleanupError.getMessage());
-		}
+	    // ------------------------------------
+	    // Cleanup temp files
+	    // ------------------------------------
+	    try {
 
-		progressCallback.accept(100);
+	        for (File file : files) {
+	            Files.deleteIfExists(
+	                    file.toPath()
+	            );
+	        }
 
-		return generatePresignedUrl("hls/" + movieId + "/playlist.m3u8", Duration.ofHours(9));
+	        Files.deleteIfExists(
+	                Path.of(outputDir)
+	        );
+
+	    } catch (Exception cleanupEx) {
+
+	        System.err.println(
+	                "Cleanup warning: "
+	                        + cleanupEx.getMessage()
+	        );
+	    }
+
+	    // ------------------------------------
+	    // Complete
+	    // ------------------------------------
+	    progressCallback.accept(100);
+
+	    // Store ONLY stable playlist key
+	    return "hls/" + movieId + "/playlist.m3u8";
 	}
-
 	//working on hls presigned url
 	 public String getOriginalManifest(String manifestKey) {
         GetObjectRequest getReq = GetObjectRequest.builder()
@@ -406,33 +482,57 @@ public class MovieStorageService {
     }
 
 
-	public Map<String, String> getPresignedUrlsForSegments(String prefix) {
-        ListObjectsV2Request listReq = ListObjectsV2Request.builder()
-                .bucket(bucketName)
-                .prefix(prefix)
-                .build();
+	 public Map<String, String> getPresignedUrlsForSegments(
+		        String prefix) {
 
-        ListObjectsV2Response listRes = s3Client.listObjectsV2(listReq);
+		    ListObjectsV2Response response =
+		            s3Client.listObjectsV2(
+		                    ListObjectsV2Request.builder()
+		                            .bucket(bucketName)
+		                            .prefix(prefix)
+		                            .build()
+		            );
 
-        Map<String, String> urlMap = new HashMap<>();
-        for (S3Object obj : listRes.contents()) {
-            if (obj.key().endsWith(".ts")) {
-                GetObjectRequest getReq = GetObjectRequest.builder()
-                        .bucket(bucketName)
-                        .key(obj.key())
-                        .build();
+		    Map<String, String> urls =
+		            new HashMap<>();
 
-                PresignedGetObjectRequest presignedRequest =
-                         s3Presigner.presignGetObject(r -> r.getObjectRequest(getReq)
-                                .signatureDuration(Duration.ofMinutes(60)));
+		    for (S3Object obj : response.contents()) {
 
-                // store mapping original filename -> presigned URL
-                String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1);
-                urlMap.put(fileName, presignedRequest.url().toString());
-            }
-        }
-        return urlMap;
-    }
+		        if (!obj.key().endsWith(".ts")) {
+		            continue;
+		        }
 
+		        GetObjectRequest getObjectRequest =
+		                GetObjectRequest.builder()
+		                        .bucket(bucketName)
+		                        .key(obj.key())
+		                        .build();
+
+		        PresignedGetObjectRequest signed =
+		                s3Presigner.presignGetObject(
+		                        p -> p
+		                                .getObjectRequest(
+		                                        getObjectRequest
+		                                )
+		                                .signatureDuration(
+		                                        Duration.ofHours(6)
+		                                )
+		                );
+
+		        String fileName =
+		                obj.key().substring(
+		                        obj.key().lastIndexOf("/") + 1
+		                );
+
+		        urls.put(
+		                fileName,
+		                signed.url().toString()
+		        );
+		    }
+
+		    return urls;
+		}
+//new function that not upload presigned url permanent on menifest cloud
+	
 	
 }

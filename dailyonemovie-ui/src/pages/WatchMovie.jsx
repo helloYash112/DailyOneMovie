@@ -4,14 +4,15 @@ import { useDispatch, useSelector } from 'react-redux';
 import { getMovieURL } from '../store/moviesThunk';
 //import { VideoPlayer } from '../components/VideoPlayer';
 import ShakaPlayer from '../components/player/ShakaPlayer';
+import { apiLink } from '../store/moviesThunk';
 
 
 export default function WatchMovie() {
   const { id } = useParams();
   const dispatch = useDispatch();
   ///console.log(id);
-  
-
+  let url=apiLink+`/movies/${id}/manifest`
+console.log(url);
   const movie = useSelector((state) =>
     state.movies.movies.find((m) => String(m.id) === id)
   );
@@ -36,7 +37,7 @@ export default function WatchMovie() {
   return (
     <div className='p-6 bg-black'>
     
-      <ShakaPlayer src={movie.playlistUrl} />
+      <ShakaPlayer src={url} />
     </div>
   );
 }

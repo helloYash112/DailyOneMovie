@@ -1,5 +1,0 @@
-package com.dailyonemovie.dailyonemovie_backend.config;
-
-public class SecurityConfig {
-
-}

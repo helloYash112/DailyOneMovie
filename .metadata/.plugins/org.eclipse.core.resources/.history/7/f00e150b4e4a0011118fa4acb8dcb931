@@ -1,5 +1,0 @@
-package com.dailyonemovie.dailyonemovie_backend.DTO;
-
-public record MoviesDTO() {
-
-}
