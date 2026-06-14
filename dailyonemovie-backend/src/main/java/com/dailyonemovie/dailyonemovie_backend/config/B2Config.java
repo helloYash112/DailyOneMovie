@@ -72,48 +72,37 @@ public class B2Config {
         executor.initialize();
         return executor;
     }
-    /*
-    @Bean
-    public S3AsyncClient s3AsyncClient() {
-        return S3AsyncClient.builder()
-        		.region(Region.of("us-east-005"))
-                .credentialsProvider(
-                    StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(accessKeyId, secretAccessKey)
-                    )
-                )
-                .endpointOverride(
-                    URI.create(endpoint)
-                )
-                .build();
-    }*/
-    @Bean
-    public S3AsyncClient s3AsyncClient() {
+    
+ // Production initialization sample for Backblaze B2 S3-Compatible Storage compatibility
 
-        SdkAsyncHttpClient httpClient =
-                NettyNioAsyncHttpClient.builder()
-                        .maxConcurrency(20)
-                        .maxPendingConnectionAcquires(1000)
-                        .writeTimeout(Duration.ofMinutes(10))
-                        .readTimeout(Duration.ofMinutes(10))
-                        .connectionTimeout(Duration.ofSeconds(30))
-                        .build();
+    
+    @Bean
+    public S3AsyncClient s3AsyncClient() {
+        
+        // Performance-tuned Netty HTTP/2 Client for dynamic parallel chunk uploads
+        SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
+                .maxConcurrency(200) // Increased to allow high-density parallel segment transfers
+                .maxPendingConnectionAcquires(5000)
+                .writeTimeout(Duration.ofMinutes(5)) // Reduced from 10m; fail-fast is better for small segments
+                .readTimeout(Duration.ofMinutes(5))
+                .connectionTimeout(Duration.ofSeconds(10))
+                .connectionMaxIdleTime(Duration.ofSeconds(60)) // Reclaim dead connection channels out of pool
+                .build();
 
         return S3AsyncClient.builder()
                 .httpClient(httpClient)
                 .credentialsProvider(
                         StaticCredentialsProvider.create(
-                                AwsBasicCredentials.create(
-                                        accessKeyId,
-                                        secretAccessKey
-                                )
+                                AwsBasicCredentials.create(accessKeyId, secretAccessKey)
                         )
                 )
-                .region(Region.of("us-east-005"))
-                .endpointOverride(
-                        URI.create(endpoint)
-                )
+                // CRITICAL FIX: B2 requires a valid AWS standard region format (e.g., us-west-2) 
+                // for signature signing calculation, regardless of the custom endpoint domain.
+                .region(Region.US_WEST_2) 
+                .endpointOverride(URI.create(endpoint))
+                // Forces the SDK to use path-style URLs (bucket names in path rather than subdomain)
+                // which prevents DNS resolution errors with certain B2 cluster regions.
+                .forcePathStyle(true) 
                 .build();
     }
-
 }

@@ -5,15 +5,18 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
@@ -30,14 +33,16 @@ public class MoviesService {
 	private final MovieStorageService storageService;
 	private final HlsMetadataRepository hlsRepository;
 	private final TaskExecutor taskExecutor;
+	private final VideoProcessingService videoProcessService;
 	Movies movie=null;
 
 	public MoviesService(MovieRepository moviesRepository, MovieStorageService storageService,
-			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor) {
+			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor,VideoProcessingService videoProcessService) {
 		this.moviesRepository = moviesRepository;
 		this.storageService = storageService;
 		this.hlsRepository = hlsrepo;
 		this.taskExecutor = taskExecutor;
+		this.videoProcessService =videoProcessService ;
 	}
 
 	/**
@@ -92,7 +97,7 @@ public class MoviesService {
 		moviesRepository.delete(movie);
 	}
 
-	public List<MoviesDTO> fetchMovies() {
+	public List<HlsDTO> fetchMovies() {
 		List<Movies> movies = moviesRepository.findAll();
 
 		if (movies == null || movies.isEmpty()) {
@@ -101,7 +106,6 @@ public class MoviesService {
 
 		return movies.stream().map(movie -> {
 			String posterUrl = null;
-			String playlistUrl = null;
 			String playlistKey = null;
 
 			// Poster presigned URL
@@ -113,15 +117,13 @@ public class MoviesService {
 			Optional<HlsMetadata> hlsOpt = hlsRepository.findByMovie(movie);
 			if (hlsOpt.isPresent()) {
 				playlistKey = hlsOpt.get().getPlaylistKey();
-				playlistUrl = storageService.generatePresignedUrl(playlistKey, Duration.ofHours(9));
 			}
 
 			// Build DTO with correct mapping
-			return new MoviesDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
+			return new HlsDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
 					movie.getRating(), movie.getPosterKey(), // stable poster key
 					posterUrl, // presigned poster URL
-					playlistKey, // stable playlist key
-					playlistUrl // presigned playlist URL
+					playlistKey // stable playlist key
 			);
 		}).toList();
 	}
@@ -168,14 +170,62 @@ public class MoviesService {
 	}
 
 
-	// orchester for convert and upload m3ud file
-	public Movies handleMovieUpload(MovieUploadRequest request) throws IOException {
-        // Step 1: Upload poster immediately
+    public MovieStatusDTO getStatus(Long id) {
+        Movies movie = moviesRepository.findById(id).orElseThrow();
+        return new MovieStatusDTO(movie.getId(), movie.getStatus(), movie.getProgress());
+    }
+	//function for get manifest url 
+    public String buildPresignedManifest(Long movieId) {
+
+        Movies movie = moviesRepository.findById(movieId)
+                .orElseThrow(() ->
+                        new RuntimeException("Movie not found"));
+
+        HlsMetadata hls = hlsRepository.findByMovie(movie)
+                .orElseThrow(() ->
+                        new RuntimeException("HLS metadata not found"));
+
+        String manifestKey = hls.getPlaylistKey();
+
+        String prefix =
+                manifestKey.substring(
+                        0,
+                        manifestKey.lastIndexOf("/") + 1
+                );
+
+        return storageService.buildPresignedManifest(manifestKey,prefix);
+    }
+    
+    
+    //----------------------------------------------------------------
+    
+    public Movies handleMovieUpload(MovieUploadRequest request) throws IOException {
+        // Step 1: Upload poster outside database transaction context
         String posterKey = "posters/" + UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
         storageService.uploadFile(posterKey, request.posterFile(), request.posterFile().getContentType());
 
-        // Step 2: Persist Movie entity
-        movie = new Movies();
+        // Step 2: Save metadata and flush transaction entirely using a isolated self-contained method
+        Movies movie = saveInitialMovieRecord(request, posterKey);
+
+        // Step 3: Copy movie file to safe local temp storage location
+        File safeCopy = File.createTempFile("movie_" + movie.getId(), ".mp4");
+        request.movieFile().transferTo(safeCopy);
+
+        // Step 4: Safe Async execution. The row is now guaranteed to exist in the DB!
+        final Long movieId = movie.getId();
+        taskExecutor.execute(() -> processMovieAsync(safeCopy, movieId));
+
+        // Step 5: Clean, lightning-fast return
+        return movie;
+    }
+
+    /**
+     * Isolated transactional unit specifically for saving the raw entity metadata.
+     * Connection is immediately returned to the pool once this method exits.
+     */
+    @Transactional
+    public Movies saveInitialMovieRecord(MovieUploadRequest request, String posterKey) {
+        Movies movie = new Movies();
         movie.setTitle(request.title());
         movie.setGenre(request.genre());
         movie.setDuration(request.duration());
@@ -183,58 +233,74 @@ public class MoviesService {
         movie.setPosterKey(posterKey);
         movie.setStatus("UPLOADING");
         movie.setProgress(0);
-        movie = moviesRepository.saveAndFlush(movie);
-
-        // Step 3: Copy movie file to safe temp location
-        File safeCopy = File.createTempFile("movie_" + movie.getId(), ".mp4");
-        request.movieFile().transferTo(safeCopy);
-
-        // Step 4: Kick off background processing with safe copy
-        taskExecutor.execute(() -> processMovieAsync(safeCopy, movie));
-
-        // Step 5: Return DTO immediately
-        String posterUrl = storageService.generatePresignedUrl(posterKey, Duration.ofHours(9));
-        return movie;
+        return moviesRepository.saveAndFlush(movie);
     }
 
-    private void processMovieAsync(File movieFile, Movies movie) {
+    /**
+     * Complete Asynchronous consumer engine. Run securely inside its own threads.
+     */
+    private void processMovieAsync(File movieFile, Long movieId) {
         try {
-            updateStatus(movie, "CONVERTING", 10);
+            updateStatusInDb(movieId, "CONVERTING_AND_STREAMING", 10);
 
-           String playlistUrl = storageService.convertToHlsFile(
+            // Execute high performance dynamic FFmpeg streaming upload engine
+            String playlistUrl = videoProcessService.convertAndUploadHls(
                 movieFile,
-                movie.getId(),
-                progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
+                movieId,
+                progress -> updateProgressInDb(movieId, progress)
             );
-            /*
-            String playlistUrl = storageService.uploadHlsFileToCloud(
-            		movieFile, 
-            		movie.getId(),
-            		progress -> updateStatus(movie, "UPLOADING_TO_S3", progress)
-            		);*/
 
-            HlsMetadata hlsMetadata = new HlsMetadata();
-            hlsMetadata.setMovie(movie);
-            hlsMetadata.setPlaylistKey("hls/" + movie.getId() + "/playlist.m3u8");
-            hlsMetadata.setCreatedAt(Instant.now());
-            hlsRepository.save(hlsMetadata);
+            // Persist metadata binding layers
+            saveHlsMetadata(movieId, playlistUrl);
 
-            updateStatus(movie, "READY", 100);
+            // Complete lifecycle successfully
+            updateFinalStatusInDb(movieId, "READY");
+            
         } catch (Exception e) {
+            System.err.println("Critical pipeline processing fault encountered on Movie ID: " + movieId);
             e.printStackTrace();
-            updateStatus(movie, "FAILED", 0);
+            updateStatusInDb(movieId, "FAILED", 0);
         } finally {
-            if (movieFile.exists()) movieFile.delete();
+            if (movieFile != null && movieFile.exists()) {
+                movieFile.delete();
+            }
         }
     }
-    public void updateStatus(Movies movie, String status, int progress) {
-        movie.setStatus(status);
-        movie.setProgress(progress);
-        moviesRepository.save(movie);
+
+    /**
+     * Isolated transaction unit to create the final HLS reference bindings.
+     */
+    @Transactional
+    public void saveHlsMetadata(Long movieId, String playlistUrl) {
+        HlsMetadata hlsMetadata = new HlsMetadata();
+        Movies movieProxy = moviesRepository.getReferenceById(movieId);
+        hlsMetadata.setMovie(movieProxy);
+        hlsMetadata.setPlaylistKey(playlistUrl);
+        hlsMetadata.setCreatedAt(Instant.now());
+        hlsRepository.save(hlsMetadata);
     }
 
-    public MovieStatusDTO getStatus(Long id) {
-        Movies movie = moviesRepository.findById(id).orElseThrow();
-        return new MovieStatusDTO(movie.getId(), movie.getStatus(), movie.getProgress());
+    /* * DATABASE STATE MODIFIERS
+     * Requires Propagation.REQUIRES_NEW to ensure progress updates are immediately committed
+     * and visible to client tracking polling intervals, independent of other steps.
+     */
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateProgressInDb(Long movieId, int progress) {
+        moviesRepository.updateMovieProgress(movieId, progress);
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateStatusInDb(Long movieId, String status, int progress) {
+        moviesRepository.updateMovieProgress(movieId, progress);
+        moviesRepository.updateFinalStatus(movieId, status);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void updateFinalStatusInDb(Long movieId, String status) {
+        moviesRepository.updateFinalStatus(movieId, status);
+        moviesRepository.updateMovieProgress(movieId, 100);
+    }
+   
+
 }

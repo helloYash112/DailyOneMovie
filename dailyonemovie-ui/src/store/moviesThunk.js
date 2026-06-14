@@ -7,7 +7,7 @@ import { setMovieProgress, setError, setStep, setPosterProgress } from "./movieS
 
 
 const apiLink = import.meta.env.VITE_API_URL;
-//const apiLink = "http://localhost:8080";
+//export const apiLink = "http://localhost:8080";
 
 export const  API = axios.create({
   baseURL: apiLink,
@@ -30,7 +30,6 @@ export const uploadHlsMovie = createAsyncThunk(
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (progressEvent) => {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          // You can split progress between poster and movie if needed
           dispatch(setMovieProgress(percent));
         },
       });

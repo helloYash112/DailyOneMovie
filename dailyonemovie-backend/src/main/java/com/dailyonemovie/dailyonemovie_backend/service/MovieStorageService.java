@@ -4,22 +4,35 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionService;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,9 +41,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -38,6 +56,7 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
 
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -49,6 +68,7 @@ import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -69,6 +89,7 @@ public class MovieStorageService {
 	private final S3Client s3Client;
 	private final S3Presigner s3Presigner;
 	private final S3AsyncClient s3AsyncClient;
+	private final ExecutorService uploadExecutor = Executors.newFixedThreadPool(12);
 	@Value("${b2.bucketName}")
 	private String bucketName;
 
@@ -160,91 +181,6 @@ public class MovieStorageService {
 		System.out.println("marger req is sucessfull...");
 	}
 
-	public String convertToHlsFile(File inputFile, Long movieId, Consumer<Integer> progressCallback)
-			throws IOException, InterruptedException {
-
-		// Step 1: Run FFmpeg to generate HLS segments
-		String outputDir = Files.createTempDirectory("hls").toString();
-		ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", inputFile.getAbsolutePath(), "-c:v", "h264", "-b:v",
-				"800k", "-c:a", "aac", "-b:a", "96k", "-hls_time", "20", "-hls_list_size", "0", "-f", "hls",
-				outputDir + "/playlist.m3u8");
-		pb.redirectErrorStream(true);
-		Process process = pb.start();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-			reader.lines().forEach(System.out::println);
-		}
-		if (process.waitFor() != 0) {
-			throw new RuntimeException("FFmpeg conversion failed");
-		}
-
-		// Step 2: Upload segments concurrently to Backblaze B2
-		File[] hlsFiles = new File(outputDir).listFiles();
-		if (hlsFiles == null)
-			throw new IOException("No HLS files generated");
-
-		int totalSegments = (int) Arrays.stream(hlsFiles).filter(f -> f.getName().endsWith(".ts")).count();
-		AtomicInteger uploadedCount = new AtomicInteger(0);
-		Map<String, String> getUrls = new ConcurrentHashMap<>();
-
-		ExecutorService executor = Executors.newFixedThreadPool(10); // upload 5 files at once
-		List<Future<Void>> futures = new ArrayList<>();
-
-		for (File hlsFile : hlsFiles) {
-			futures.add(executor.submit(() -> {
-				String key = hlsFile.getName().endsWith(".ts") ? "hls/" + movieId + "/" + hlsFile.getName()
-						: "hls/" + movieId + "/playlist.m3u8";
-
-				// Backblaze B2 S3-compatible upload
-				s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key(key).build(),
-						RequestBody.fromFile(hlsFile));
-
-				String getUrl = generatePresignedUrl(key, Duration.ofHours(9));
-				getUrls.put(hlsFile.getName(), getUrl);
-
-				if (hlsFile.getName().endsWith(".ts")) {
-					int progress = 20 + (int) ((uploadedCount.incrementAndGet() / (double) totalSegments) * 60);
-					progressCallback.accept(progress);
-				}
-				return null;
-			}));
-		}
-
-		// Wait for all uploads to finish
-		for (Future<Void> f : futures) {
-			try {
-				f.get();
-			} catch (ExecutionException e) {
-				throw new RuntimeException("Upload failed", e.getCause());
-			}
-		}
-		executor.shutdown();
-		executor.awaitTermination(1, TimeUnit.HOURS);
-
-		// Step 3: Rewrite playlist with presigned URLs
-		File playlistFile = new File(outputDir, "playlist.m3u8");
-		List<String> lines = Files.readAllLines(playlistFile.toPath());
-		List<String> updatedLines = new ArrayList<>();
-		for (String line : lines) {
-			if (line.endsWith(".ts")) {
-				String fileName = Paths.get(line).getFileName().toString();
-				updatedLines.add(getUrls.get(fileName));
-			} else {
-				updatedLines.add(line);
-			}
-		}
-		Files.write(playlistFile.toPath(), updatedLines);
-
-		// Step 4: Upload rewritten playlist
-		String playlistKey = "hls/" + movieId + "/playlist.m3u8";
-		s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key(playlistKey).build(),
-				RequestBody.fromFile(playlistFile));
-
-		// Step 5: Final progress
-		progressCallback.accept(100);
-
-		return generatePresignedUrl(playlistKey, Duration.ofHours(9));
-	}
-
 	public void uploadFile(String key, MultipartFile file, String contentType) throws IOException {
 		s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key(key).contentType(contentType).build(),
 				RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
@@ -258,130 +194,94 @@ public class MovieStorageService {
 		return presignedRequest.url().toString();
 	}
 
-	// option 2 to upload hls file
-	public String uploadHlsFileToCloud(File inputFile, Long movieId, Consumer<Integer> progressCallback)
-			throws Exception {
+	// ✅ Fetch manifest and normalize lines
+	public String getOriginalManifest(String manifestKey) {
+		GetObjectRequest getReq = GetObjectRequest.builder().bucket(bucketName).key(manifestKey).build();
 
-		progressCallback.accept(5);
+		try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getReq);
+				BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object))) {
 
-		// ==========================
-		// Generate HLS
-		// ==========================
+			return reader.lines().map(line -> line.replace("\r", "").trim()) // normalize CRLF + spaces
+					.collect(Collectors.joining("\n"));
 
-		String outputDir = Files.createTempDirectory("hls").toString();
-
-		ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", inputFile.getAbsolutePath(), "-c:v", "libx264",
-				"-preset", "veryfast", "-b:v", "800k", "-c:a", "aac", "-b:a", "96k", "-hls_time", "20",
-				"-hls_list_size", "0", "-f", "hls", outputDir + "/playlist.m3u8");
-
-		pb.redirectErrorStream(true);
-
-		Process process = pb.start();
-
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-
-			String line;
-
-			while ((line = reader.readLine()) != null) {
-				System.out.println(line);
-			}
+		} catch (IOException e) {
+			throw new RuntimeException("Error reading manifest", e);
 		}
-
-		int exitCode = process.waitFor();
-
-		if (exitCode != 0) {
-			throw new RuntimeException("FFmpeg conversion failed");
-		}
-
-		progressCallback.accept(30);
-
-		// ==========================
-		// Load Files
-		// ==========================
-
-		File[] files = new File(outputDir).listFiles();
-
-		if (files == null || files.length == 0) {
-			throw new RuntimeException("No HLS files generated");
-		}
-
-		long totalSegments = Arrays.stream(files).filter(f -> f.getName().endsWith(".ts")).count();
-
-		System.out.println("Total files: " + files.length);
-		System.out.println("Total segments: " + totalSegments);
-
-		AtomicInteger uploadedSegments = new AtomicInteger();
-
-		// Limit active uploads
-		Semaphore semaphore = new Semaphore(5);
-
-		List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-		for (File file : files) {
-
-			semaphore.acquire();
-
-			String key = "playlist.m3u8".equals(file.getName()) ? "hls/" + movieId + "/playlist.m3u8"
-					: "hls/" + movieId + "/" + file.getName();
-
-			PutObjectRequest request = PutObjectRequest.builder().bucket(bucketName).key(key).build();
-
-			CompletableFuture<Void> future = s3AsyncClient.putObject(request, AsyncRequestBody.fromFile(file.toPath()))
-					.thenAccept(response -> {
-
-						if (file.getName().endsWith(".ts")) {
-
-							int uploaded = uploadedSegments.incrementAndGet();
-
-							int progress = 30 + (int) ((uploaded * 65.0) / totalSegments);
-
-							progressCallback.accept(progress);
-
-							System.out.println("Uploaded " + uploaded + "/" + totalSegments + " -> " + file.getName());
-						}
-					}).whenComplete((r, e) -> {
-						semaphore.release();
-
-						if (e != null) {
-							System.err.println("Upload failed: " + file.getName());
-							e.printStackTrace();
-						}
-					});
-
-			futures.add(future);
-		}
-
-		try {
-
-			CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-		} catch (Exception e) {
-
-			throw new RuntimeException("HLS upload failed", e);
-		}
-
-		progressCallback.accept(95);
-
-		// ==========================
-		// Cleanup Temp Files
-		// ==========================
-
-		try {
-
-			for (File file : files) {
-				Files.deleteIfExists(file.toPath());
-			}
-
-			Files.deleteIfExists(Paths.get(outputDir));
-
-		} catch (Exception cleanupError) {
-
-			System.err.println("Cleanup failed: " + cleanupError.getMessage());
-		}
-
-		progressCallback.accept(100);
-
-		return generatePresignedUrl("hls/" + movieId + "/playlist.m3u8", Duration.ofHours(9));
 	}
 
+	// ✅ Build presigned URL map for all .ts files
+
+	public Map<String, String> getPresignedUrlsForSegments(String prefix) {
+		Map<String, String> urls = new HashMap<>();
+		String continuationToken = null;
+
+		do {
+			ListObjectsV2Request.Builder reqBuilder = ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix);
+
+			if (continuationToken != null) {
+				reqBuilder.continuationToken(continuationToken);
+			}
+
+			ListObjectsV2Response response = s3Client.listObjectsV2(reqBuilder.build());
+
+			for (S3Object obj : response.contents()) {
+				if (!obj.key().endsWith(".ts"))
+					continue;
+
+				String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1).replace("\r", "").trim();
+
+				PresignedGetObjectRequest signed = s3Presigner.presignGetObject(
+						p -> p.getObjectRequest(GetObjectRequest.builder().bucket(bucketName).key(obj.key()).build())
+								.signatureDuration(Duration.ofHours(6)));
+
+				urls.put(fileName, signed.url().toString());
+			}
+
+			continuationToken = response.nextContinuationToken();
+		} while (continuationToken != null);
+
+		return urls;
+	}
+
+	public String buildPresignedManifest(String manifestKey, String prefix) {
+	    // 1. Get the raw clean text layout of your m3u8 file
+	    String manifest = getOriginalManifest(manifestKey);
+	    StringBuilder rewritten = new StringBuilder();
+
+	    // Ensure our prefix string ends cleanly with a slash
+	    String pathPrefix = (prefix.endsWith("/")) ? prefix : prefix + "/";
+
+	    // 2. Process the file line-by-line
+	    for (String line : manifest.split("\n")) {
+	        String normalized = line.replace("\r", "").trim();
+
+	        if (normalized.endsWith(".ts")) {
+	            // Reconstruct the exact full path key for this specific segment file inside the bucket
+	            String fullSegmentKey = pathPrefix + normalized;
+
+	            try {
+	                // 3. Directly generate the presigned URL for this specific file on the fly
+	                PresignedGetObjectRequest signed = s3Presigner.presignGetObject(p -> p
+	                        .getObjectRequest(GetObjectRequest.builder()
+	                                .bucket(bucketName)
+	                                .key(fullSegmentKey)
+	                                .build())
+	                        .signatureDuration(Duration.ofHours(6))
+	                );
+
+	                rewritten.append(signed.url().toString()).append("\n");
+
+	            } catch (Exception e) {
+	                throw new RuntimeException("Failed to presign segment key target: " + fullSegmentKey, e);
+	            }
+	        } else {
+	            rewritten.append(normalized).append("\n");
+	        }
+	    }
+
+	    return rewritten.toString();
+	}
+
+	// ------------------------------------------------------------------------------------
+	
 }

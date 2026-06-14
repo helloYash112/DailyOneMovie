@@ -16,9 +16,7 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll()
-            );
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
         return http.build();
     }
@@ -27,19 +25,14 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Allow your Netlify frontend and local dev server
+        // Allow local dev and Netlify
+        configuration.addAllowedOriginPattern("http://localhost:*");
         configuration.addAllowedOrigin("https://dailyonemovie.netlify.app");
-        configuration.addAllowedOrigin("http://localhost:5173");
 
-        // Allow specific methods
-        configuration.addAllowedMethod("GET");
-        configuration.addAllowedMethod("POST");
-        configuration.addAllowedMethod("PUT");
-        configuration.addAllowedMethod("DELETE");
-        configuration.addAllowedMethod("OPTIONS");
-
-        // Allow headers and credentials
+        // Allow all methods and headers
+        configuration.addAllowedMethod("*");
         configuration.addAllowedHeader("*");
+
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
