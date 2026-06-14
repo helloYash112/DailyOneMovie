@@ -1,6 +1,7 @@
 package com.dailyonemovie.dailyonemovie_backend.controler;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +31,15 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
+
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+
 
 
 @RestController
@@ -194,8 +204,9 @@ public class MoviesController {
 	    return ResponseEntity.ok("success");
 	}
 	@PostMapping("/hls/upload")
-	public ResponseEntity<Map<Long,String>> upload(@ModelAttribute MovieUploadRequest request) throws IOException {
-	    return ResponseEntity.ok(moviesService.handleMovieUpload(request));
+	public Map<String,Object> upload(@ModelAttribute MovieUploadRequest request) throws IOException {
+		Movies movie=moviesService.handleMovieUpload(request);
+	     return Map.of("id", movie.getId(), "status", "Success");
 	}
 
 
@@ -211,21 +222,38 @@ public class MoviesController {
         return ResponseEntity.ok(moviesService.getStatus(id));
     }
 
-    @GetMapping(
-            value = "{id}/manifest",
-            produces = "application/vnd.apple.mpegurl"
+    @RequestMapping(
+            value = "/{id}/manifest",
+            method = {RequestMethod.GET, RequestMethod.HEAD} // Listens to both methods to prevent 500/405 errors
     )
     public ResponseEntity<String> getManifest(
-            @PathVariable Long id) {
+            @PathVariable Long id,
+            HttpMethod method) { // Dynamically captures whether it's a GET or HEAD request
 
-        String manifest =
-                moviesService.buildPresignedManifest(id);
+        String manifest = moviesService.buildPresignedManifest(id);
 
+        if (manifest == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Build the precise content type and metadata headers manually
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("application/vnd.apple.mpegurl"));
+        headers.setContentLength(manifest.getBytes(StandardCharsets.UTF_8).length);
+        headers.setCacheControl("no-store, no-cache, must-revalidate");
+
+        // CRITICAL FIX: If it's a HEAD request, return immediately with just the headers.
+        // This prevents the framework from trying to map a body to a response that must not have one.
+        if (HttpMethod.HEAD.equals(method)) {
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .build(); 
+        }
+
+        // Standard response layout for regular GET streaming traffic
         return ResponseEntity.ok()
-                .header(
-                        "Cache-Control",
-                        "no-store, no-cache, must-revalidate"
-                )
+                .headers(headers)
                 .body(manifest);
     }
+
 }
