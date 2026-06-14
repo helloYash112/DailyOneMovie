@@ -34,7 +34,8 @@ public class SecurityConfig {
                 "http://localhost:4000",
                 "http://localhost:8080"));
 
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"));
+
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
