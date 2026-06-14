@@ -1,0 +1,65 @@
+spring.application.name=dailyonemovie-backend
+#spring.datasource.url=${DB_URL}
+#spring.datasource.username=${DB_USER}
+#spring.datasource.password=${DB_PASS}
+
+# PostgreSQL driver
+#spring.datasource.driver-class-name=org.postgresql.Driver
+
+# JPA / Hibernate settings
+#spring.jpa.hibernate.ddl-auto=update
+#spring.jpa.show-sql=true
+#spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+
+ #Server port (default 8080 if not set)
+#server.port=${PORT:8080}
+
+#spring.servlet.multipart.max-file-size=1024MB
+
+
+# Backblaze B2 S3-compatible settings
+#b2.endpoint=${B2_ENDPOINT}
+#b2.bucketName=${B2_BUCKET_NAME}
+#b2.accessKeyId=${B2_ACCESS_KEY_ID}
+#b2.secretAccessKey=${B2_SECRET_ACCESS_KEY}
+
+
+spring.datasource.url=jdbc:postgresql://ep-rough-heart-apt9g5jy-pooler.c-7.us-east-1.aws.neon.tech:5432/neondb?sslmode=require
+spring.datasource.username=neondb_owner
+spring.datasource.password=npg_ZcmIbFBSw6s4
+
+# Enable multi-part uploads
+spring.servlet.multipart.enabled=true
+
+# The maximum size allowed for a single uploaded file (e.g., the raw MP4 video)
+spring.servlet.multipart.max-file-size=2GB
+
+# The maximum total size allowed for a multi-part/form-data request (Video + Poster + DTO text combined)
+spring.servlet.multipart.max-request-size=2GB
+
+
+# PostgreSQL driver
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# JPA / Hibernate settings
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+server.port=8080
+# Backblaze B2 S3-compatible settings
+b2.endpoint=https://s3.us-east-005.backblazeb2.com
+b2.bucketName=dailyonemovie-assets
+b2.accessKeyId=0052d66df71c9350000000002
+b2.secretAccessKey=K005l4SHvVxnhj+sYRENVJFvh3bYK6E
+
+
+
+
+
+
+
+
+
+
+
+
