@@ -12,7 +12,8 @@ import {
   getPosterURL,
   fetchMovies,
   deleteMovieAndPoster,
-  uploadHlsMovie
+  uploadHlsMovie,
+  checkBackendHealth
 } from "./moviesThunk";
 
 /*
@@ -31,23 +32,27 @@ const Movie = {
 
 const moviesSlice = createSlice({
   name: "movies",
-  initialState :{
-  movies: [],
+  initialState: {
+    movies: [],
 
-  // Upload lifecycle
-  status: "idle", // idle | uploading | success | fail
-  currentMovieId: null,
+    // Upload lifecycle
+    status: "idle", // idle | uploading | success | fail
+    currentMovieId: null,
 
-  // Fetch lifecycle
-  fetchStatus: "idle", // idle | loading | success | fail
+    // Fetch lifecycle
+    fetchStatus: "idle", // idle | loading | success | fail
 
-  error: null,
+    error: null,
 
-  movieProgress: 0,
-  posterProgress: 0,
+    movieProgress: 0,
+    posterProgress: 0,
 
-  currentStep: "",
-},
+    currentStep: "",
+    backendAlive: false,
+    backendLoading: false,
+    backendTimestamp: null,
+    backendError: null,
+  },
 
   reducers: {
     addMovie: (state, action) => {
@@ -263,7 +268,25 @@ const moviesSlice = createSlice({
       .addCase(uploadHlsMovie.rejected, (state, action) => {
         state.status = "fail";
         state.error = action.payload;
-      });
+      })
+    .addCase(checkBackendHealth.pending, (state) => {
+        state.backendLoading = true;
+        state.backendError = null;
+    })
+
+    .addCase(checkBackendHealth.fulfilled, (state, action) => {
+        state.backendLoading = false;
+        state.backendAlive = action.payload.alive;
+        state.backendTimestamp = action.payload.timestamp;
+        state.backendError = null;
+    })
+
+    .addCase(checkBackendHealth.rejected, (state, action) => {
+        state.backendLoading = false;
+        state.backendAlive = false;
+        state.backendTimestamp = null;
+        state.backendError = action.payload?.error || "Backend unavailable";
+    });
   },
 });
 

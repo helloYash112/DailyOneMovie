@@ -11,7 +11,34 @@ export const apiLink = import.meta.env.VITE_API_URL;
 
 export const  API = axios.create({
   baseURL: apiLink,
+  withCredentials: true,
 });
+
+export const checkBackendHealth = createAsyncThunk(
+    "movies/checkBackendHealth",
+    async (_, { rejectWithValue }) => {
+      console.log("wakeup the server");
+        try {
+            const response = await axios.get(
+                `${apiLink}/movies/health`,
+                {
+                    timeout: 30000,
+                }
+            );
+
+            return response.data;
+        } catch (error) {
+            return rejectWithValue({
+                alive: false,
+                timestamp: Date.now(),
+                error:
+                    error.response?.data ||
+                    error.message ||
+                    "Backend unavailable",
+            });
+        }
+    }
+);
 
 // Async thunk for uploading a rawmp4 and converting to hls fil
 export const uploadHlsMovie = createAsyncThunk(

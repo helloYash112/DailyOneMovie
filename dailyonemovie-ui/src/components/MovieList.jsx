@@ -2,18 +2,15 @@ import { useSelector } from "react-redux";
 import { MovieCard } from "./MovieCard";
 
 export function MovieList() {
-  const { movies = [], status } = useSelector(
+  const { movies = [], fetchStatus } = useSelector(
     (state) => state.movies || {}
   );
 
- //console.log("movies:", movies);
-// console.log("type of movie:", typeof movies);
-
-  if (status === "loading") {
+  if (fetchStatus === "loading") {
     return <p>Loading movies...</p>;
   }
 
-  if (!Array.isArray(movies)) {
+  if (!Array.isArray(movies) || movies.length === 0) {
     return <p>No movies available</p>;
   }
 
