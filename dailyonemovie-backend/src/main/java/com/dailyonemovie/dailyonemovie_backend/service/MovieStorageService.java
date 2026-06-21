@@ -38,7 +38,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
@@ -56,11 +56,8 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
-import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -69,18 +66,11 @@ import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
-import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
-import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
-import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -94,7 +84,6 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 @Service
-@Slf4j
 public class MovieStorageService {
 
 	private final S3Client s3Client;
@@ -294,116 +283,5 @@ public class MovieStorageService {
 	}
 
 	// ------------------------------------------------------------------------------------
-	 /**
-     * Deletes all files belonging to a movie.
-     *
-     * Example:
-     * hls/123/master.m3u8
-     *
-     * Deletes:
-     * hls/123/*
-     */
-	public boolean deleteMovieHlsFiles(String playlistKey) {
-	    if (playlistKey == null || playlistKey.isBlank()) {
-	        throw new IllegalArgumentException("playlistKey cannot be null or blank");
-	    }
-
-	    // Example: hls/16/playlist.m3u8 → hls/16/
-	    String prefix = playlistKey.substring(0, playlistKey.lastIndexOf("/") + 1);
-	    log.info("Deleting all HLS files under bucket={} prefix={}", bucketName, prefix);
-
-	    String continuationToken = null;
-	    boolean deletedAny = false;
-
-	    try {
-	        do {
-	            // List objects under prefix
-	            ListObjectsV2Request listRequest = ListObjectsV2Request.builder()
-	                    .bucket(bucketName)
-	                    .prefix(prefix)
-	                    .continuationToken(continuationToken)
-	                    .build();
-
-	            ListObjectsV2Response response = s3Client.listObjectsV2(listRequest);
-
-	            if (response.contents().isEmpty()) {
-	                log.info("No objects found under prefix={}", prefix);
-	                break; // nothing left to delete
-	            }
-
-	            // Collect object identifiers
-	            List<ObjectIdentifier> objects = response.contents().stream()
-	                    .map(obj -> ObjectIdentifier.builder().key(obj.key()).build())
-	                    .toList();
-
-	            // Delete batch
-	            DeleteObjectsRequest deleteRequest = DeleteObjectsRequest.builder()
-	                    .bucket(bucketName)
-	                    .delete(Delete.builder().objects(objects).build())
-	                    .build();
-
-	            DeleteObjectsResponse deleteResponse = s3Client.deleteObjects(deleteRequest);
-
-	            // Check for errors
-	            if (!deleteResponse.errors().isEmpty()) {
-	                deleteResponse.errors().forEach(err ->
-	                        log.error("Failed to delete key={} code={} message={}",
-	                                err.key(), err.code(), err.message()));
-	                return false; // fail fast if any object deletion fails
-	            }
-
-	            log.info("Deleted {} objects under prefix={}", objects.size(), prefix);
-	            deletedAny = true;
-
-	            continuationToken = response.nextContinuationToken();
-
-	        } while (continuationToken != null);
-
-	        return deletedAny; // true if at least one object deleted, false if nothing found
-
-	    } catch (SdkException sdkEx) {
-	        log.error("AWS SDK error deleting files for prefix={}", prefix, sdkEx);
-	        return false;
-	    } catch (Exception ex) {
-	        log.error("Unexpected error deleting files for prefix={}", prefix, ex);
-	        return false;
-	    }
-	}
-	public boolean deletePosterFile(String posterKey) {
-	    if (posterKey == null || posterKey.isBlank()) {
-	        throw new IllegalArgumentException("posterKey cannot be null or blank");
-	    }
-
-	    try {
-	        log.info("Attempting to delete poster key={} from bucket={}", posterKey, bucketName);
-
-	        DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder()
-	                .bucket(bucketName)
-	                .key(posterKey)
-	                .build();
-
-	        DeleteObjectResponse response = s3Client.deleteObject(deleteRequest);
-
-	        // For versioned buckets, check deleteMarker
-	        if (response.deleteMarker() != null && response.deleteMarker()) {
-	            log.info("Poster {} deleted successfully (deleteMarker=true)", posterKey);
-	        } else {
-	            log.info("Poster {} deleted successfully", posterKey);
-	        }
-
-	        return true;
-
-	    } catch (NoSuchKeyException e) {
-	        log.warn("Poster key={} not found in bucket={}", posterKey, bucketName);
-	        return false;
-	    } catch (SdkException sdkEx) {
-	        log.error("AWS SDK error deleting poster key={} from bucket={}", posterKey, bucketName, sdkEx);
-	        return false;
-	    } catch (Exception ex) {
-	        log.error("Unexpected error deleting poster key={} from bucket={}", posterKey, bucketName, ex);
-	        return false;
-	    }
-	}
-
 	
 }

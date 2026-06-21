@@ -1,12 +1,9 @@
 package com.dailyonemovie.dailyonemovie_backend.config;
 
-
 import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -17,82 +14,34 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http)
-            throws Exception {
-
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
-
-            .cors(cors -> cors.configurationSource(
-                    corsConfigurationSource()))
-
-            .authorizeHttpRequests(auth -> auth
-
-            	    .requestMatchers(HttpMethod.OPTIONS, "/**")
-            	    .permitAll()
-
-            	    .requestMatchers("/auth/me")
-            	    .permitAll()
-            	    .requestMatchers("/movies/health").permitAll()
-
-            	    .requestMatchers("/movies/**")
-            	    .authenticated()
-
-            	    .anyRequest()
-            	    .authenticated()
-            	)
-
-            .oauth2Login(oauth2 -> oauth2
-                .successHandler((request, response, authentication) -> {
-
-                    response.sendRedirect(
-                        "https://dailyonemovie.netlify.app"
-                    );
-                })
-            )
-
-            .logout(logout -> logout
-                .logoutSuccessUrl(
-                    "https://dailyonemovie.netlify.app"
-                )
-            )
-
-            .oauth2Client(Customizer.withDefaults());
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
 
-        CorsConfiguration configuration =
-                new CorsConfiguration();
-
+        // Explicitly allow Netlify and localhost dev ports
         configuration.setAllowedOrigins(List.of(
-            "http://localhost:5173",
-            "https://dailyonemovie.netlify.app"
-        ));
+                "https://dailyonemovie.netlify.app",
+                "http://localhost:5173",
+                "http://localhost:4000",
+                "http://localhost:8080"));
 
-        configuration.setAllowedMethods(List.of(
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "PATCH",
-            "OPTIONS"
-        ));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"));
 
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
-        UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
-
-        source.registerCorsConfiguration(
-                "/**",
-                configuration
-        );
-
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
         return source;
     }
+
 }

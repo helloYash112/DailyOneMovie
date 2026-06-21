@@ -5,16 +5,13 @@ import { NavBar } from "../components/NavBar";
 import MovieStatus from "../components/MovieStatus.jsx";
 import { MovieList } from "../components/MovieList";
 import { resetUploadState } from "../store/movieSlice.js";
-import { checkBackendHealth } from "../store/moviesThunk.js";
 import UploadHlsMovieForm from "../components/UploadHlsMovieForm.jsx";
 
 export default function DashBoard() {
   const dispatch = useDispatch();
-  const { status, fetchStatus, movies, currentMovieId } = useSelector(
-    (state) => state.movies,
-  );
+  const { status,fetchStatus, movies, currentMovieId } = useSelector((state) => state.movies);
   const [showForm, setShowForm] = useState(false);
-  console.log("status :", status, "curent_movie_id :", currentMovieId);
+  console.log("status :",status,"curent_movie_id :",currentMovieId);
 
   // fetch movies initially
   useEffect(() => {
@@ -22,16 +19,6 @@ export default function DashBoard() {
       dispatch(fetchMovies());
     }
   }, [status, movies.length, dispatch]);
-
-  useEffect(() => {
-    dispatch(checkBackendHealth()); // fire immediately
-
-    const interval = setInterval(() => {
-      dispatch(checkBackendHealth());
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(interval);
-  }, [dispatch]);
 
   const handleBack = () => {
     dispatch(resetUploadState());
@@ -55,9 +42,7 @@ export default function DashBoard() {
           </>
         )}
 
-        {showForm && fetchStatus === "idle" && (
-          <UploadHlsMovieForm></UploadHlsMovieForm>
-        )}
+        {showForm && fetchStatus === "idle" && <UploadHlsMovieForm></UploadHlsMovieForm>}
       </div>
     </div>
   );

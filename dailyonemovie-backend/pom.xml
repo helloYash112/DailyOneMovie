@@ -99,11 +99,6 @@
 			<version>7.0.4</version>
 			<scope>compile</scope>
 		</dependency>
-
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-oauth2-client</artifactId>
-		</dependency>
 	</dependencies>
 
 	<build>

@@ -144,7 +144,7 @@ const uiConfig = {
 const ShakaPlayer = ({ src }) => {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
-
+  
   // Custom tracking state to manage user hover interactions explicitly
   const [isUserActive, setIsUserActive] = useState(true);
   const timeoutRef = useRef(null);
@@ -153,7 +153,7 @@ const ShakaPlayer = ({ src }) => {
   const resetIdleTimer = () => {
     setIsUserActive(true);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
+    
     // Only drop visibility if the media asset is actively tracking forward
     if (videoRef.current && !videoRef.current.paused) {
       timeoutRef.current = setTimeout(() => {
@@ -187,11 +187,6 @@ const ShakaPlayer = ({ src }) => {
 
         window.player = player;
         window.ui = ui;
-        player.getNetworkingEngine().registerRequestFilter(
-          (type, request) => {
-            request.allowCrossSiteCredentials = true;
-          }
-        );
 
         player.addEventListener("error", (event) => console.error("Shaka Error", event.detail));
 
@@ -227,7 +222,7 @@ const ShakaPlayer = ({ src }) => {
       onMouseMove={resetIdleTimer}
       onTouchStart={resetIdleTimer}
       className={`w-full bg-black relative overflow-hidden rounded-xl group transition-all duration-300
-        ${!isUserActive ? "cursor-none [&_.shaka-controls-container]:!opacity-0 [&_.shaka-controls-container]:!pointer-events-none" : "cursor-default [&_.shaka-controls-container]:!opacity-100"}`}
+        `}
     >
       <video
         ref={videoRef}

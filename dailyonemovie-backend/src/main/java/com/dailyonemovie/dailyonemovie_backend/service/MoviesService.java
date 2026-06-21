@@ -26,8 +26,6 @@ import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.HlsMetadataRepository;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
 
-import jakarta.persistence.EntityNotFoundException;
-
 @Service
 public class MoviesService {
 
@@ -303,40 +301,6 @@ public class MoviesService {
         moviesRepository.updateFinalStatus(movieId, status);
         moviesRepository.updateMovieProgress(movieId, 100);
     }
-    //-------------------------------------------
-    
-    @Transactional
-    public boolean deleteHlsMovie(Long movieId) {
+   
 
-        Movies movie = moviesRepository.findById(movieId)
-                .orElseThrow(() ->
-                        new EntityNotFoundException(
-                                "Movie not found: " + movieId));
-
-        HlsMetadata metadata =
-                hlsRepository.findByMovie(movie)
-                        .orElseThrow(() ->
-                                new EntityNotFoundException(
-                                        "Metadata not found"));
-
-        boolean cloudDeleted =
-                storageService.deleteMovieHlsFiles(
-                        metadata.getPlaylistKey()
-                );
-
-        if (!cloudDeleted) {
-            throw new RuntimeException(
-                    "Cloud deletion failed"
-            );
-        }
-
-        if (movie.getPosterKey() != null) {
-            storageService.deletePosterFile(movie.getPosterKey());
-        }
-
-        hlsRepository.delete(metadata);
-        moviesRepository.delete(movie);
-
-        return true;
-    }
 }

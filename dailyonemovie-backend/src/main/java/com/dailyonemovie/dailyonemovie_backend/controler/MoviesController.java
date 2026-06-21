@@ -31,7 +31,7 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
-import com.dailyonemovie.dailyonemovie_backend.service.ServerStatus;
+
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -169,9 +169,9 @@ public class MoviesController {
 
 	/** Delete movie */
 	@DeleteMapping("/{id}")
-	public ResponseEntity<Boolean> deleteMovie(@PathVariable Long id) {
-		boolean status= moviesService.deleteHlsMovie(id);
-		return ResponseEntity.ok(status);
+	public ResponseEntity<Void> deleteMovie(@PathVariable Long id) {
+		moviesService.deleteMovie(id);
+		return ResponseEntity.noContent().build();
 	}
 	// getting all movies from database
 
@@ -255,18 +255,5 @@ public class MoviesController {
                 .headers(headers)
                 .body(manifest);
     }
-    
-    @GetMapping("/health")
-    public ResponseEntity<ServerStatus> health() {
-
-        ServerStatus status =
-                new ServerStatus(
-                        true,
-                        System.currentTimeMillis()
-                );
-
-        return ResponseEntity.ok(status);
-    }
-  
 
 }

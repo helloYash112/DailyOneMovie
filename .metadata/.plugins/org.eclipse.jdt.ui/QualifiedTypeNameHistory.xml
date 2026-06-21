@@ -1,5 +1,28 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <qualifiedTypeNameHistroy>
+    <fullyQualifiedTypeName name="org.springframework.web.cors.UrlBasedCorsConfigurationSource"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse"/>
+    <fullyQualifiedTypeName name="java.nio.file.Files"/>
+    <fullyQualifiedTypeName name="org.springframework.http.HttpStatus"/>
+    <fullyQualifiedTypeName name="java.util.Map"/>
+    <fullyQualifiedTypeName name="java.util.HashMap"/>
+    <fullyQualifiedTypeName name="java.net.HttpURLConnection"/>
+    <fullyQualifiedTypeName name="java.net.URL"/>
+    <fullyQualifiedTypeName name="java.io.OutputStream"/>
+    <fullyQualifiedTypeName name="java.io.FileInputStream"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.repository.HlsMetadataRepository"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.entity.HlsMetadata"/>
+    <fullyQualifiedTypeName name="java.util.Optional"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.entity.Movies"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest"/>
+    <fullyQualifiedTypeName name="java.util.UUID"/>
+    <fullyQualifiedTypeName name="jakarta.persistence.Column"/>
+    <fullyQualifiedTypeName name="java.time.Instant"/>
+    <fullyQualifiedTypeName name="org.springframework.core.task.TaskExecutor"/>
+    <fullyQualifiedTypeName name="org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor"/>
+    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO"/>
+    <fullyQualifiedTypeName name="java.io.File"/>
     <fullyQualifiedTypeName name="java.nio.file.Paths"/>
     <fullyQualifiedTypeName name="java.io.BufferedReader"/>
     <fullyQualifiedTypeName name="java.io.InputStreamReader"/>
@@ -37,27 +60,4 @@
     <fullyQualifiedTypeName name="org.springframework.data.repository.query.Param"/>
     <fullyQualifiedTypeName name="java.util.regex.Pattern"/>
     <fullyQualifiedTypeName name="java.util.regex.Matcher"/>
-    <fullyQualifiedTypeName name="lombok.Data"/>
-    <fullyQualifiedTypeName name="lombok.AllArgsConstructor"/>
-    <fullyQualifiedTypeName name="lombok.NoArgsConstructor"/>
-    <fullyQualifiedTypeName name="com.dailyonemovie.dailyonemovie_backend.service.ServerStatus"/>
-    <fullyQualifiedTypeName name="lombok.RequiredArgsConstructor"/>
-    <fullyQualifiedTypeName name="lombok.extern.slf4j.Slf4j"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.ObjectIdentifier"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.DeleteObjectsRequest"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.Delete"/>
-    <fullyQualifiedTypeName name="jakarta.persistence.EntityNotFoundException"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.DeleteObjectsResponse"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.core.exception.SdkException"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.DeleteObjectResponse"/>
-    <fullyQualifiedTypeName name="software.amazon.awssdk.services.s3.model.NoSuchKeyException"/>
-    <fullyQualifiedTypeName name="org.springframework.security.web.SecurityFilterChain"/>
-    <fullyQualifiedTypeName name="org.springframework.security.config.annotation.web.builders.HttpSecurity"/>
-    <fullyQualifiedTypeName name="java.beans.Customizer"/>
-    <fullyQualifiedTypeName name="org.springframework.web.bind.annotation.RestController"/>
-    <fullyQualifiedTypeName name="org.springframework.web.bind.annotation.RequestMapping"/>
-    <fullyQualifiedTypeName name="org.springframework.web.bind.annotation.GetMapping"/>
-    <fullyQualifiedTypeName name="org.apache.tomcat.util.net.openssl.ciphers.Authentication"/>
-    <fullyQualifiedTypeName name="java.util.Map"/>
-    <fullyQualifiedTypeName name="org.springframework.http.HttpMethod"/>
 </qualifiedTypeNameHistroy>
