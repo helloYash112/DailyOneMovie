@@ -9,8 +9,9 @@ import { setMovieProgress, setError, setStep, setPosterProgress } from "./movieS
 export const apiLink = import.meta.env.VITE_API_URL;
 //export const apiLink = "http://localhost:8080";
 
-export const  API = axios.create({
+export const API = axios.create({
   baseURL: apiLink,
+  withCredentials: true, // critical
 });
 
 // Async thunk for uploading a rawmp4 and converting to hls fil
