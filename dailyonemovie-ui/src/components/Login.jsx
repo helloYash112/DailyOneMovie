@@ -10,14 +10,13 @@ export default function Login() {
     return <Navigate to="/" replace />;
   }
 
-  const loginWithGithub = () => {
-    window.location.href =
-      "http://localhost:8080/oauth2/authorization/github";
+   const loginWithGithub = () => {
+    window.location.href = "https://dailyonemovie.onrender.com/oauth2/authorization/github";
   };
 
   const handleGoogleLogin = () => {
     window.location.href =
-      "http://localhost:8080/oauth2/authorization/google";
+      "https://dailyonemovie.onrender.com/oauth2/authorization/google";
   };
 
   return (
