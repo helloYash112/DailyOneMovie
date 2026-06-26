@@ -51,7 +51,7 @@ public class AuthController {
         if (authentication != null) {
             new SecurityContextLogoutHandler().logout(request, response, authentication);
         }
-        response.sendRedirect("http://localhost:5173/login"); 
+        response.sendRedirect("https://dailyonemovie.netlify.app/login"); 
     }
 
     // ---------------- helpers ----------------
