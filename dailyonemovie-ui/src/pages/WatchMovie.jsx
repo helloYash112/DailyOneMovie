@@ -15,7 +15,7 @@ export default function WatchMovie() {
 
   return (
     <div className="p-6 bg-black">
-      <ShakaPlayer src={manifestUrl} autoPlay muted={false} />
+      <ShakaPlayer src={movie.playlistUrl} autoPlay muted={false} />
     </div>
   );
 }

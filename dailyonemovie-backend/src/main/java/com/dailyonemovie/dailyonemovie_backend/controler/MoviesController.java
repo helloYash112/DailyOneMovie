@@ -24,11 +24,13 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompleteMultipartRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.MovieSaveRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
+import com.dailyonemovie.dailyonemovie_backend.entity.HlsMetadata;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.service.MoviesService;
 
@@ -109,14 +111,14 @@ public class MoviesController {
 	    ));
 	}
 
-	@PostMapping("/confirm-save")
-	public ResponseEntity<?> save(@RequestBody Movies movie) {
-		
-		if (movie.getMovieKey() == null || movie.getPosterKey() == null) {
-			return ResponseEntity.badRequest().body("Missing file keys!");
-		}
-		return ResponseEntity.ok(moviesService.saveAndReturnMovie(movie));
-	}
+	 @PostMapping("/confirm-save")
+	    public ResponseEntity<HlsDTO> confirmSave(@RequestBody MovieSaveRequest request) {
+	        Movies movie = request.toMovieEntity();
+	        HlsMetadata hlsMetadata = request.toHlsEntity();
+
+	        HlsDTO dto = moviesService.saveAndReturnMovieWithHls(movie, hlsMetadata);
+	        return ResponseEntity.ok(dto);
+	    }
 
 
 

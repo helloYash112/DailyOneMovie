@@ -17,7 +17,7 @@ export default function UploadMovies() {
   const [rating, setRating] = useState("");
   const [movieFile, setMovieFile] = useState(null);
   const [posterFile, setPosterFile] = useState(null);
-  const [isForm, setForm] = useState(false);
+ 
 
   // reset form fields
   const resetForm = () => {
@@ -57,24 +57,11 @@ export default function UploadMovies() {
     }
   };
 
-  // toggle handler
-  const toggleForm = () => {
-    if (isForm) resetForm(); // optional: clear fields when closing
-    setForm((prev) => !prev);
-  };
+ 
 
   return (
     <div>
-      <span className="px-1.5 py-2 items-center border-b-">
-        <button
-          className="w-auto bg-blend-exclusion hover:text-2xl transition rounded py-3 font-semibold disabled:opacity-50 border-2 border-b-orange-950 text-amber-300"
-          onClick={toggleForm}
-        >
-          {isForm ? "Close Form" : "Upload Movies"}
-        </button>
-      </span>
-
-      {isForm && (
+    
         <div className="max-w-xl mx-auto bg-zinc-900 rounded-xl p-6 shadow-xl text-white align-middle">
           <h1 className="text-2xl font-bold mb-6 text-gray-500">
             Upload Movie
@@ -177,7 +164,6 @@ export default function UploadMovies() {
             </button>
           </form>
         </div>
-      )}
     </div>
   );
 }

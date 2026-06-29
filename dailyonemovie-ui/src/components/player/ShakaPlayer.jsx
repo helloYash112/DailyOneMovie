@@ -1,7 +1,8 @@
-// src/components/ShakaPlayer.jsx
+
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import shaka from "shaka-player/dist/shaka-player.ui";
 import "shaka-player/dist/controls.css";
+import { API} from "../../store/moviesThunk";
 
 /**
  * =========================
@@ -118,9 +119,16 @@ const ShakaPlayer = ({ src }) => {
       uiRef.current = ui;
 
       // Send cookies for private bucket playback
+      /*
       player.getNetworkingEngine().registerRequestFilter((type, request) => {
         request.allowCrossSiteCredentials = true;
-      });
+      });*/
+      player.getNetworkingEngine().registerRequestFilter((type, request) => {
+    const url = request.uris[0];
+
+    request.allowCrossSiteCredentials =
+        url.startsWith(API);
+});
 
       // Error handling
       player.addEventListener("error", (e) => {

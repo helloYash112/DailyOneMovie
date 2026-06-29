@@ -1,5 +1,7 @@
 package com.dailyonemovie.dailyonemovie_backend.entity;
 
+import java.time.Instant;
+
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -11,19 +13,21 @@ public class HlsMetadata {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Link back to the movie
-    @ManyToOne
-    @JoinColumn(name = "movie_id")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "movie_id", nullable = false)
     private Movies movie;
 
-    // The playlist key (main entry point for Shaka Player)
-    private String playlistKey;   // e.g., "movies/hls/12345/playlist.m3u8"
+    // Object key inside R2
+    @Column
+    private String playlistKey;
 
-    // Optional: store chunk keys if you want DB-level tracking
-    @Lob
-    private String chunkKeysJson; // e.g., ["movies/hls/12345/playlist0.ts", "playlist1.ts", ...]
+    // Public URL served by Cloudflare
+    @Column(nullable =false,length=1000)
+    private String playlistUrl;
 
-    // Timestamp for housekeeping
-    private java.time.Instant createdAt;
+    @Column(columnDefinition = "TEXT")
+    private String chunkKeysJson;
+
+
+    private Instant createdAt;
 }
-

@@ -47,14 +47,14 @@ public class SecurityConfig {
                 // GitHub OAuth login
                 .oauth2Login(oauth -> oauth
                         .defaultSuccessUrl(
-                                "https://dailyonemovie.netlify.app",
+                                "https://dailyonemovie.netlify.app/",
                                 true
                         )
                 )
 
                 .logout(logout -> logout
                         .logoutUrl("/auth/logout")
-                        .logoutSuccessUrl("https://dailyonemovie.netlify.app")
+                        .logoutSuccessUrl("https://dailyonemovie.netlify.app/login")
                         .invalidateHttpSession(true)
                         .deleteCookies("JSESSIONID")
                 );

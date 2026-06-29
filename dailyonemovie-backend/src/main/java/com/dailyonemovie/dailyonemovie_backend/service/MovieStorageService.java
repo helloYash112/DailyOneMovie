@@ -55,6 +55,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
+import com.dailyonemovie.dailyonemovie_backend.config.R2StorageProperties;
 
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
@@ -90,14 +91,14 @@ public class MovieStorageService {
 	private final S3Presigner s3Presigner;
 	private final S3AsyncClient s3AsyncClient;
 	private final ExecutorService uploadExecutor = Executors.newFixedThreadPool(12);
-	@Value("${b2.bucketName}")
-	private String bucketName;
+	private final R2StorageProperties storageProperties;
 
 	// Inject beans from B2Config
-	public MovieStorageService(S3Client s3Client, S3Presigner s3Presigner, S3AsyncClient s3AsyncClient) {
+	public MovieStorageService(S3Client s3Client, S3Presigner s3Presigner, S3AsyncClient s3AsyncClient,R2StorageProperties storageProperties) {
 		this.s3Client = s3Client;
 		this.s3Presigner = s3Presigner;
 		this.s3AsyncClient = s3AsyncClient;
+		this.storageProperties = storageProperties;
 	}
 
 	/** Delete movie or poster */
@@ -106,7 +107,7 @@ public class MovieStorageService {
 			// Log exactly what is being sent to find hidden space issues
 			System.out.println("Attempting to delete key: [" + key + "]");
 
-			DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder().bucket(bucketName).key(key).build();
+			DeleteObjectRequest deleteRequest = DeleteObjectRequest.builder().bucket(storageProperties.getBucket()).key(key).build();
 
 			s3Client.deleteObject(deleteRequest);
 
@@ -120,7 +121,7 @@ public class MovieStorageService {
 
 	/** generating presigned upload metthod to drect upload from ui */
 	public String generateUploadUrl(String key, String type) {
-		PutObjectRequest putRequest = PutObjectRequest.builder().bucket(bucketName).key(key).contentType(type).build();
+		PutObjectRequest putRequest = PutObjectRequest.builder().bucket(storageProperties.getBucket()).key(key).contentType(type).build();
 		PutObjectPresignRequest preSigned = PutObjectPresignRequest.builder().signatureDuration(Duration.ofMinutes(45))
 				.putObjectRequest(putRequest).build();
 		PresignedPutObjectRequest presignedReq = s3Presigner.presignPutObject(preSigned);
@@ -129,7 +130,7 @@ public class MovieStorageService {
 
 	public List<String> listFiles() {
 		ListObjectsV2Response response = s3Client
-				.listObjectsV2(ListObjectsV2Request.builder().bucket(bucketName).build());
+				.listObjectsV2(ListObjectsV2Request.builder().bucket(storageProperties.getBucket()).build());
 
 		return response.contents().stream().map(S3Object::key).collect(Collectors.toList());
 	}
@@ -138,7 +139,7 @@ public class MovieStorageService {
 		String fileKey = "large-uploads/" + UUID.randomUUID() + "_" + fileName;
 
 		// 1. Ask S3 to start a multipart transaction
-		CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder().bucket(bucketName)
+		CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder().bucket(storageProperties.getBucket())
 				.key(fileKey).build();
 
 		CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
@@ -148,7 +149,7 @@ public class MovieStorageService {
 		List<PartUrlInfo> partUrls = new ArrayList<>();
 		for (int partNumber = 1; partNumber <= totalParts; partNumber++) {
 
-			UploadPartRequest uploadPartRequest = UploadPartRequest.builder().bucket(bucketName).key(fileKey)
+			UploadPartRequest uploadPartRequest = UploadPartRequest.builder().bucket(storageProperties.getBucket()).key(fileKey)
 					.uploadId(uploadId).partNumber(partNumber).build();
 
 			UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
@@ -174,7 +175,7 @@ public class MovieStorageService {
 		System.out.println("implementiong  CompletedMultipartUpload req...");
 		CompletedMultipartUpload completedMultipartUpload = CompletedMultipartUpload.builder().parts(parts).build();
 		System.out.println("implementing CompleteMultipartUploadRequest....");
-		CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder().bucket(bucketName)
+		CompleteMultipartUploadRequest completeRequest = CompleteMultipartUploadRequest.builder().bucket(storageProperties.getBucket())
 				.key(fileKey).uploadId(uploadId).multipartUpload(completedMultipartUpload).build();
 		System.out.println("sending marge req....");
 		s3Client.completeMultipartUpload(completeRequest);
@@ -182,12 +183,12 @@ public class MovieStorageService {
 	}
 
 	public void uploadFile(String key, MultipartFile file, String contentType) throws IOException {
-		s3Client.putObject(PutObjectRequest.builder().bucket(bucketName).key(key).contentType(contentType).build(),
+		s3Client.putObject(PutObjectRequest.builder().bucket(storageProperties.getBucket()).key(key).contentType(contentType).build(),
 				RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 	}
 
 	public String generatePresignedUrl(String key, Duration expiry) {
-		GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(bucketName).key(key).build();
+		GetObjectRequest getObjectRequest = GetObjectRequest.builder().bucket(storageProperties.getBucket()).key(key).build();
 		GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder().signatureDuration(expiry)
 				.getObjectRequest(getObjectRequest).build();
 		PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
@@ -196,7 +197,7 @@ public class MovieStorageService {
 
 	// ✅ Fetch manifest and normalize lines
 	public String getOriginalManifest(String manifestKey) {
-		GetObjectRequest getReq = GetObjectRequest.builder().bucket(bucketName).key(manifestKey).build();
+		GetObjectRequest getReq = GetObjectRequest.builder().bucket(storageProperties.getBucket()).key(manifestKey).build();
 
 		try (ResponseInputStream<GetObjectResponse> s3Object = s3Client.getObject(getReq);
 				BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object))) {
@@ -216,7 +217,7 @@ public class MovieStorageService {
 		String continuationToken = null;
 
 		do {
-			ListObjectsV2Request.Builder reqBuilder = ListObjectsV2Request.builder().bucket(bucketName).prefix(prefix);
+			ListObjectsV2Request.Builder reqBuilder = ListObjectsV2Request.builder().bucket(storageProperties.getBucket()).prefix(prefix);
 
 			if (continuationToken != null) {
 				reqBuilder.continuationToken(continuationToken);
@@ -231,7 +232,7 @@ public class MovieStorageService {
 				String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1).replace("\r", "").trim();
 
 				PresignedGetObjectRequest signed = s3Presigner.presignGetObject(
-						p -> p.getObjectRequest(GetObjectRequest.builder().bucket(bucketName).key(obj.key()).build())
+						p -> p.getObjectRequest(GetObjectRequest.builder().bucket(storageProperties.getBucket()).key(obj.key()).build())
 								.signatureDuration(Duration.ofHours(6)));
 
 				urls.put(fileName, signed.url().toString());
@@ -263,7 +264,7 @@ public class MovieStorageService {
 	                // 3. Directly generate the presigned URL for this specific file on the fly
 	                PresignedGetObjectRequest signed = s3Presigner.presignGetObject(p -> p
 	                        .getObjectRequest(GetObjectRequest.builder()
-	                                .bucket(bucketName)
+	                                .bucket(storageProperties.getBucket())
 	                                .key(fullSegmentKey)
 	                                .build())
 	                        .signatureDuration(Duration.ofHours(6))

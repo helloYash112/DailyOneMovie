@@ -1,250 +1,261 @@
 package com.dailyonemovie.dailyonemovie_backend.service;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.lang.String;
 
+import software.amazon.awssdk.transfer.s3.S3TransferManager;
+import software.amazon.awssdk.transfer.s3.model.UploadFileRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import software.amazon.awssdk.core.async.AsyncRequestBody;
-import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import com.dailyonemovie.dailyonemovie_backend.config.R2StorageProperties;
 
-/**
- * Production-Grade high performance HLS video streaming pipeline.
- * Adheres to SOLID principles and decouples processing via high-throughput I/O.
- */
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 @Service
-public class HighPerformanceVideoPipeline implements VideoProcessingService {
+public class HighPerformanceVideoPipeline implements VideoProcessingService{
 
-    private final S3AsyncClient s3AsyncClient;
-    
-    private final String bucketName;
-    private final ExecutorService uploadExecutor;
+    private static final Logger log = LoggerFactory.getLogger(HighPerformanceVideoPipeline.class);
+    private static final Pattern DURATION_PATTERN = Pattern.compile("Duration:\\s*(\\d+):(\\d+):(\\d+)\\.(\\d+)");
+
+    private final S3TransferManager transferManager;
+    private final String bucket;
+    private final Executor uploadExecutor;
 
     public HighPerformanceVideoPipeline(
-            S3AsyncClient s3AsyncClient,  
-            @Value("${b2.bucketName}") String bucketName, 
-            @Value("${pipeline.upload.threads:50}") int parallelUploadThreads) {
-        this.s3AsyncClient = s3AsyncClient;
-        this.bucketName = bucketName;
-        // Decoupled specialized thread pool for controlling parallel execution saturation
-        this.uploadExecutor = new ThreadPoolExecutor(
-                parallelUploadThreads, parallelUploadThreads,
-                60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(2000),
-                new ThreadFactory() {
-                    private final AtomicInteger counter = new AtomicInteger(0);
-                    @Override
-                    public Thread newThread(Runnable r) {
-                        Thread t = new Thread(r, "pipeline-uploader-" + counter.incrementAndGet());
-                        t.setDaemon(true);
-                        return t;
-                    }
-                },
-                new ThreadPoolExecutor.CallerRunsPolicy() // Backpressure protection strategy
-        );
+            S3TransferManager transferManager,
+            @Qualifier("movieUploadExecutor") Executor uploadExecutor,
+            R2StorageProperties storageProperties) {
+        this.transferManager = transferManager;
+        this.uploadExecutor = uploadExecutor;
+        this.bucket =storageProperties.getBucket();
     }
+@Override
+    public String convertAndUploadHls(
+            File inputFile,
+            Long movieId,
+            Consumer<Integer> progressConsumer) throws Exception {
 
-    @Override
-    public String convertAndUploadHls(File inputFile, Long movieId, Consumer<Integer> progressCallback) throws Exception {
         if (inputFile == null || !inputFile.exists()) {
-            throw new IllegalArgumentException("Target source input file context does not exist.");
+            throw new IllegalArgumentException("Input video file does not exist.");
         }
 
-        Path tempDir = Files.createTempDirectory("hls_engine_" + movieId + "_");
-        String outputDirStr = tempDir.toString();
+        final long totalInputSize = inputFile.length();
+        final Path tempDir = Files.createTempDirectory("hls_pipeline_" + movieId + "_");
+        final String baseUploadPath = "hls/" + movieId + "/";
+        final String playlistKey = baseUploadPath + "playlist.m3u8";
+
+        // Thread-safe tracking engines
+        final Set<String> activeUploads = ConcurrentHashMap.newKeySet();
+        final AtomicLong totalBytesUploaded = new AtomicLong(0);
         
-        Set<String> trackedUploadsSet = ConcurrentHashMap.newKeySet();
-        List<CompletableFuture<Void>> futuresTrack = new CopyOnWriteArrayList<>();
-        AtomicInteger completedUploadsCounter = new AtomicInteger(0);
+        // Use a phaser or bounded coordinator to track deep async jobs structurally
+        final Phaser taskCoordinator = new Phaser(1); 
 
-        // 1. Accurate baseline estimations via FFprobe
-        int estimatedTotalSegments = estimateTotalSegments(inputFile, 4);
+        // 1. Pre-calculate precise video duration via FFprobe/FFmpeg to establish accurate metric baselines
+        double durationInSeconds = estimateVideoDuration(inputFile);
 
-        // 2. Optimized FFmpeg Generation Parameters
-        // Replaced 'ultrafast' with 'veryfast' + explicit CRF target to prevent cloud storage bloating
-        ProcessBuilder pb = new ProcessBuilder(
-                "ffmpeg", "-y", "-i", inputFile.getAbsolutePath(),
-                "-c:v", "libx264", 
-                "-preset", "veryfast", 
-                "-crf", "23",
-                "-g", "60", 
-                "-sc_threshold", "0",
-                "-c:a", "aac", 
-                "-b:a", "128k",
-                "-hls_time", "4", 
-                "-hls_list_size", "0",
-                "-hls_flags", "independent_segments",
-                "-f", "hls", outputDirStr + "/playlist.m3u8"
-        );
+        log.info("Starting production processing pipeline for Movie: {} | Size: {} MB | Target Duration: {}s", 
+                movieId, totalInputSize / (1024 * 1024), durationInSeconds);
 
-        pb.redirectErrorStream(true);
-        Process process = pb.start();
+        Process ffmpeg = null;
+        try {
+            ffmpeg = startFfmpeg(inputFile, tempDir);
 
-        // 3. Decoupled Reactive Event Stream Engine
-        String previousSegmentTracker[] = new String[1]; // Workaround to track true closed sequences
-        
-        CompletableFuture<Void> pipelineLoggingTask = CompletableFuture.runAsync(() -> {
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                String line;
-                Pattern pattern = Pattern.compile("Opening '([^']+)' for writing");
-
-                while ((line = reader.readLine()) != null) {
-                    Matcher matcher = pattern.matcher(line);
-                    if (matcher.find()) {
-                        String currentlyOpenedPath = matcher.group(1);
-                        File currentFile = new File(currentlyOpenedPath);
-                        String currentFilename = currentFile.getName();
-
-                        if (currentFilename.endsWith(".ts")) {
-                            // If we have a tracked previous segment, it is guaranteed fully closed by FFmpeg
-                            if (previousSegmentTracker[0] != null) {
-                                String uploadTarget = previousSegmentTracker[0];
-                                submitAsyncUpload(tempDir, uploadTarget, movieId, trackedUploadsSet,
-                                        futuresTrack, completedUploadsCounter, estimatedTotalSegments, progressCallback);
-                            }
-                            previousSegmentTracker[0] = currentFilename;
+            // 2. Spawn a specialized non-blocking reader thread
+            final Process processRef = ffmpeg;
+            CompletableFuture<Void> pipelineMonitor = CompletableFuture.runAsync(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(processRef.getInputStream(), StandardCharsets.UTF_8))) {
+                    
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        // React directly to HLS segment opening/closing notices in stdout log streams
+                        if (line.contains("Opening") && line.contains(".ts")) {
+                            triggerAsyncSegmentUploads(tempDir, baseUploadPath, activeUploads, totalBytesUploaded, totalInputSize, progressConsumer, taskCoordinator);
                         }
                     }
+                } catch (Exception e) {
+                    throw new CompletionException("Fatal breakdown inside process stream reader thread", e);
                 }
-            } catch (IOException e) {
-                Thread.currentThread().interrupt();
+            }, uploadExecutor);
+
+            // 3. Wait for compiler transcoding sequence safely
+            int exitCode = ffmpeg.waitFor();
+            if (exitCode != 0) {
+                throw new IllegalStateException("FFmpeg processing engine terminated anomalously with exit code: " + exitCode);
             }
-        }, uploadExecutor);
 
-        int ffmpegExitCode = process.waitFor();
-        pipelineLoggingTask.join();
+            // Ensure our stream consumer terminates or surfaces its exceptions gracefully
+            pipelineMonitor.join();
 
-        if (ffmpegExitCode != 0) {
-            cleanLocalDirectory(tempDir);
-            throw new RuntimeException("FFmpeg runtime crashed unexpectedly with exit structural matrix code: " + ffmpegExitCode);
+            // 4. Force synchronization of all pending parallel tasks before executing final sweeps
+            taskCoordinator.arriveAndAwaitAdvance();
+
+            // 5. Run final sweep upload for the master layout manifest configuration
+            uploadRemainingFiles(tempDir, baseUploadPath);
+
+            if (progressConsumer != null) {
+                progressConsumer.accept(100);
+            }
+
+        } catch (Exception pipelineException) {
+            log.error("Critical Failure inside HLS processing pipeline architecture for movie context ID: {}", movieId, pipelineException);
+            throw new RuntimeException("Video Processing Pipeline Exception", pipelineException);
+        } finally {
+            // Destructive lifecycle safety guarantees
+            if (ffmpeg != null && ffmpeg.isAlive()) {
+                ffmpeg.destroyForcibly();
+            }
+            cleanupDisk(tempDir);
         }
 
-        // 4. Concluding Execution Sweep Strategy
-        try (var stream = Files.list(tempDir)) {
-            stream.filter(path -> path.toString().endsWith(".ts"))
-                  .forEach(path -> {
-                      String filename = path.getFileName().toString();
-                      submitAsyncUpload(tempDir, filename, movieId, trackedUploadsSet,
-                              futuresTrack, completedUploadsCounter, estimatedTotalSegments, progressCallback);
-                  });
-        }
-
-        // Await synchronization barriers on processing threads natively
-        CompletableFuture.allOf(futuresTrack.toArray(new CompletableFuture[0])).join();
-
-        // 5. Finalize Playlist Ingestion Pipeline
-        File playlistFile = new File(outputDirStr + "/playlist.m3u8");
-        String playlistKey = "hls/" + movieId + "/playlist.m3u8";
-
-        if (!playlistFile.exists()) {
-            throw new NoSuchFileException("The compilation process missed core asset file path: playlist.m3u8");
-        }
-
-        // Direct async high throughput push
-        s3AsyncClient.putObject(PutObjectRequest.builder()
-                        .bucket(bucketName)
-                        .key(playlistKey)
-                        .contentType("application/x-mpegURL")
-                        .build(),
-                AsyncRequestBody.fromFile(playlistFile)).join();
-
-        progressCallback.accept(100);
-        
-        // 6. Complete Clean up of storage workspace
-        cleanLocalDirectory(tempDir);
         return playlistKey;
     }
 
-    private void submitAsyncUpload(Path tempDir, String filename, Long movieId,
-                                    Set<String> trackedUploadsSet,
-                                    List<CompletableFuture<Void>> futuresTrack,
-                                    AtomicInteger completedUploadsCounter,
-                                    int estimatedTotalSegments,
-                                    Consumer<Integer> progressCallback) {
+    private Process startFfmpeg(File inputFile, Path outputDir) throws Exception {
+        String segmentPattern = outputDir.resolve("seg_%06d.ts").toString();
+        String playlistPath = outputDir.resolve("playlist.m3u8").toString();
 
-        if (trackedUploadsSet.add(filename)) {
-            File chunkFile = tempDir.resolve(filename).toFile();
-            String s3Key = "hls/" + movieId + "/" + filename;
+        ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-y",
+                "-i", inputFile.getAbsolutePath(),
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-tune", "zerolatency",
+                "-sc_threshold", "0", 
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-f", "hls",
+                "-hls_time", "6", // Increased slightly to maximize Cloudflare multi-part chunking efficiency
+                "-hls_list_size", "0",
+                "-hls_flags", "independent_segments",
+                "-hls_segment_filename", segmentPattern,
+                playlistPath
+        );
 
-            // Fully asynchronous task generation utilizing thread loops without blocking sleeps
-            CompletableFuture<Void> asyncTask = s3AsyncClient.putObject(PutObjectRequest.builder()
-                                    .bucket(bucketName)
-                                    .key(s3Key)
-                                    .contentType("video/MP2T")
-                                    .build(),
-                            AsyncRequestBody.fromFile(chunkFile))
-                    .thenRunAsync(() -> {
-                        try {
-                            Files.deleteIfExists(chunkFile.toPath());
-                        } catch (IOException ignored) {}
-
-                        // Thread-safe progress recalculations
-                        int currentCount = completedUploadsCounter.incrementAndGet();
-                        int progress = (estimatedTotalSegments > 0) 
-                                ? (int) Math.min(((double) currentCount / estimatedTotalSegments) * 98, 98)
-                                : (int) (95 * (1 - Math.exp(-0.05 * currentCount)));
-                                
-                        progressCallback.accept(Math.max(1, progress));
-                    }, uploadExecutor)
-                    .exceptionally(ex -> {
-                        System.err.println("Critical network upload exception on asset: " + filename + " -> " + ex.getMessage());
-                        return null;
-                    });
-
-            futuresTrack.add(asyncTask);
-        }
+        pb.redirectErrorStream(true);
+        return pb.start();
     }
 
-    private int estimateTotalSegments(File inputFile, int segmentDurationSeconds) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                    "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1", inputFile.getAbsolutePath()
-            );
-            Process p = pb.start();
-            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
-                String line = r.readLine();
-                if (line != null && !line.trim().isEmpty()) {
-                    return (int) Math.ceil(Double.parseDouble(line.trim()) / segmentDurationSeconds);
-                }
-            }
+    private void triggerAsyncSegmentUploads(Path tempDir, String baseUploadPath, Set<String> activeUploads, 
+                                             AtomicLong totalBytesUploaded, long totalInputSize, 
+                                             Consumer<Integer> progressConsumer, Phaser phaser) {
+        try (Stream<Path> files = Files.list(tempDir)) {
+            files.filter(p -> p.toString().endsWith(".ts"))
+                 .forEach(file -> {
+                     String fileName = file.getFileName().toString();
+                     
+                     // Concurrency gate: ensure we only register the file for upload once
+                     if (activeUploads.add(fileName)) {
+                         phaser.register();
+                         
+                         uploadExecutor.execute(() -> {
+                             try {
+                                 long fileSize = Files.size(file);
+                                 String s3Key = baseUploadPath + fileName;
+
+                                 uploadFileToR2(file, s3Key, "video/MP2T");
+                                 
+                                 // Safely delete immediately after successful upload
+                                 Files.deleteIfExists(file);
+
+                                 // Update overall progress based on physical bytes processed
+                                 long currentUploadedBytes = totalBytesUploaded.addAndGet(fileSize);
+                                 if (progressConsumer != null && totalInputSize > 0) {
+                                     int computedProgress = (int) ((currentUploadedBytes * 95) / totalInputSize);
+                                     progressConsumer.accept(Math.min(99, computedProgress));
+                                 }
+                             } catch (Exception e) {
+                                 log.error("Asynchronous processing failure for segment chunk target: {}", fileName, e);
+                                 activeUploads.remove(fileName); // Evict key to support targeted recovery sweeps
+                             } finally {
+                                 phaser.arriveAndDeregister();
+                             }
+                         });
+                     }
+                 });
         } catch (Exception e) {
-            System.err.println("Notice: ffprobe context dropped. Falling back to dynamic progress curve calculation.");
+            log.error("Error evaluating local scratch workspace directories", e);
         }
-        return -1;
     }
 
-    private void cleanLocalDirectory(Path dir) {
+    private void uploadRemainingFiles(Path tempDir, String baseUploadPath) {
+        try (Stream<Path> walk = Files.list(tempDir)) {
+            walk.forEach(file -> {
+                try {
+                    String fileName = file.getFileName().toString();
+                    String contentType = fileName.endsWith(".m3u8") ? "application/x-mpegURL" : "video/MP2T";
+                    uploadFileToR2(file, baseUploadPath + fileName, contentType);
+                    Files.deleteIfExists(file);
+                } catch (Exception e) {
+                    log.error("Fatal exception encountered on final directory sweep processing", e);
+                }
+            });
+        } catch (Exception e) {
+            log.error("Directory traversal error during final execution sweep step", e);
+        }
+    }
+
+    private void uploadFileToR2(Path file, String s3Key, String contentType) {
+        if (!Files.exists(file)) return;
+
+        UploadFileRequest request = UploadFileRequest.builder()
+                .putObjectRequest(p -> p
+                        .bucket(bucket)
+                        .key(s3Key)
+                        .contentType(contentType))
+                .source(file)
+                .build();
+
+        // AWS CRT Engine automatically divides execution into multi-part transfers if needed
+        transferManager.uploadFile(request).completionFuture().join();
+    }
+
+    private double estimateVideoDuration(File inputFile) {
         try {
-            if (Files.exists(dir)) {
-                try (var stream = Files.walk(dir)) {
-                    stream.sorted((a, b) -> b.compareTo(a))
-                          .forEach(path -> {
-                              try {
-                                  Files.deleteIfExists(path);
-                              } catch (IOException ignored) {}
-                          });
+            ProcessBuilder pb = new ProcessBuilder("ffmpeg", "-i", inputFile.getAbsolutePath());
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    Matcher m = DURATION_PATTERN.matcher(line);
+                    if (m.find()) {
+                        long hours = Long.parseLong(m.group(1));
+                        long minutes = Long.parseLong(m.group(2));
+                        long seconds = Long.parseLong(m.group(3));
+                        return hours * 3600 + minutes * 60 + seconds;
+                    }
                 }
             }
-        } catch (IOException e) {
-            System.err.println("Failed to clean up workspace directory: " + e.getMessage());
+        } catch (Exception ignored) {}
+        return 1.0; // Graceful structural fallback to avoid division by zero exceptions
+    }
+
+    private void cleanupDisk(Path dir) {
+        if (dir == null || !Files.exists(dir)) return;
+        try (Stream<Path> s = Files.walk(dir)) {
+            s.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (Exception ignored) {}
+            });
+            log.info("Disk cleanup completely successful.");
+        } catch (Exception e) {
+            log.error("Failed to purge temporary runtime directories cleanly: {}", dir, e);
         }
     }
 }

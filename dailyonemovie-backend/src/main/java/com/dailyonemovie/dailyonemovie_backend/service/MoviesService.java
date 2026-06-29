@@ -21,6 +21,7 @@ import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
+import com.dailyonemovie.dailyonemovie_backend.config.R2StorageProperties;
 import com.dailyonemovie.dailyonemovie_backend.entity.HlsMetadata;
 import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.HlsMetadataRepository;
@@ -34,16 +35,21 @@ public class MoviesService {
 	private final HlsMetadataRepository hlsRepository;
 	private final TaskExecutor taskExecutor;
 	private final VideoProcessingService videoProcessService;
+	private final R2StorageProperties storageProperties;
 	Movies movie=null;
 
 	public MoviesService(MovieRepository moviesRepository, MovieStorageService storageService,
-			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor,VideoProcessingService videoProcessService) {
+			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor,VideoProcessingService videoProcessService, R2StorageProperties storageProperties) {
 		this.moviesRepository = moviesRepository;
 		this.storageService = storageService;
 		this.hlsRepository = hlsrepo;
 		this.taskExecutor = taskExecutor;
 		this.videoProcessService =videoProcessService ;
+		this.storageProperties = storageProperties;
 	}
+	 public String buildPublicUrl(String objectKey) {
+	        return String.format("%s/%s", storageProperties.getPublicUrl(), objectKey);
+	    }
 
 	/**
 	 * Save metadata + upload files
@@ -107,23 +113,26 @@ public class MoviesService {
 		return movies.stream().map(movie -> {
 			String posterUrl = null;
 			String playlistKey = null;
+			String playlistUrl=null;
 
 			// Poster presigned URL
 			if (movie.getPosterKey() != null) {
-				posterUrl = storageService.generatePresignedUrl(movie.getPosterKey(), Duration.ofHours(9));
+				posterUrl = movie.getPosterUrl();
 			}
 
 			// Lookup HLS metadata for this movie
 			Optional<HlsMetadata> hlsOpt = hlsRepository.findByMovie(movie);
 			if (hlsOpt.isPresent()) {
 				playlistKey = hlsOpt.get().getPlaylistKey();
+				playlistUrl=hlsOpt.get().getPlaylistUrl();
 			}
 
 			// Build DTO with correct mapping
 			return new HlsDTO(movie.getId(), movie.getTitle(), movie.getGenre(), movie.getDuration(),
 					movie.getRating(), movie.getPosterKey(), // stable poster key
 					posterUrl, // presigned poster URL
-					playlistKey // stable playlist key
+					playlistKey, // stable playlist key
+					playlistUrl
 			);
 		}).toList();
 	}
@@ -132,14 +141,37 @@ public class MoviesService {
 		return storageService.generateUploadUrl(key, fileType);
 	}
 
-	public MoviesDTO saveAndReturnMovie(Movies movie) {
+	@Transactional
+	public HlsDTO saveAndReturnMovieWithHls(Movies movie, HlsMetadata hlsMetadata) {
+		String posterUrl = buildPublicUrl(movie.getPosterKey());
+	    String playlistUrl =buildPublicUrl(hlsMetadata.getPlaylistKey());
+		movie.setPosterUrl(posterUrl);
+		movie.setStatus("ready");
+		movie.setProgress(100);
+		hlsMetadata.setPlaylistUrl(playlistUrl);
+	    // Persist movie
+	    Movies savedMovie = moviesRepository.saveAndFlush(movie);
 
-		Movies movies = moviesRepository.save(movie);
-		return new MoviesDTO(movies.getId(), movies.getTitle(), movies.getGenre(), movies.getDuration(),
-				movies.getRating(), movies.getMovieKey(), movies.getPosterKey(),
-				storageService.generatePresignedUrl(movies.getMovieKey(), Duration.ofHours(9)),
-				storageService.generatePresignedUrl(movies.getPosterKey(), Duration.ofHours(9)));
+	    // Persist HLS metadata
+	    hlsMetadata.setMovie(savedMovie);
+	    hlsMetadata.setCreatedAt(Instant.now());
+	    HlsMetadata savedHls = hlsRepository.saveAndFlush(hlsMetadata);
 
+	    
+	    
+
+	    // Return DTO
+	    return new HlsDTO(
+	        savedMovie.getId(),
+	        savedMovie.getTitle(),
+	        savedMovie.getGenre(),
+	        savedMovie.getDuration(),
+	        savedMovie.getRating(),
+	        savedMovie.getPosterKey(),
+	        savedMovie.getPosterUrl(),
+	        savedHls.getPlaylistKey(),
+	        savedHls.getPlaylistUrl()
+	    );
 	}
 
 	public List<String> getListOfFileFromCloud() {
@@ -230,7 +262,9 @@ public class MoviesService {
         movie.setGenre(request.genre());
         movie.setDuration(request.duration());
         movie.setRating(request.rating());
+        final String publicPosterKey = storageProperties.getPublicUrl()+"/"+posterKey;
         movie.setPosterKey(posterKey);
+        movie.setPosterUrl(publicPosterKey);
         movie.setStatus("UPLOADING");
         movie.setProgress(0);
         return moviesRepository.saveAndFlush(movie);
@@ -276,6 +310,8 @@ public class MoviesService {
         Movies movieProxy = moviesRepository.getReferenceById(movieId);
         hlsMetadata.setMovie(movieProxy);
         hlsMetadata.setPlaylistKey(playlistUrl);
+        final String pubPlaylistUrl=storageProperties.getPublicUrl()+"/"+playlistUrl;
+        hlsMetadata.setPlaylistUrl(pubPlaylistUrl);
         hlsMetadata.setCreatedAt(Instant.now());
         hlsRepository.save(hlsMetadata);
     }

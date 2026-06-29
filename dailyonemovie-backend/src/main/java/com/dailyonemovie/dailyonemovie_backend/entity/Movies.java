@@ -10,23 +10,32 @@ import lombok.Data;
 @Entity
 @Data
 public class Movies {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String title;      
-    private String genre;     
-    private int duration;       
-    private double rating; 
-    @Column
-    private String status; // Enum: UPLOADING, CONVERTING, UPLOADING_TO_S3, READY, FAILED
+    private String title;
+
+    private String genre;
+
+    private int duration;
+
+    private double rating;
 
     @Column
-    private int progress; // 0–100
+    private String status; // UPLOADING, CONVERTING, UPLOADING, READY, FAILED
 
+    @Column
+    private int progress;
 
-    // Store only the object keys (filenames in Backblaze)
-    private String movieKey;    // e.g., "movie.mp4"
-    private String posterKey;   // e.g., "poster.png"
+    // Original uploaded movie object
+    @Column
+    private String movieKey;
+
+    // Poster object
+    private String posterKey;
+
+    // Public poster URL
+    private String posterUrl;
 }
-

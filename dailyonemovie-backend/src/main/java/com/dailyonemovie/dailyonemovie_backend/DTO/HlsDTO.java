@@ -8,7 +8,8 @@ public record HlsDTO(
 	    double rating,
 	    String posterKey, 
 	    String posterUrl,     
-	    String playlistKey) {
+	    String playlistKey,
+	    String playlistUrl) {
     
 
 }

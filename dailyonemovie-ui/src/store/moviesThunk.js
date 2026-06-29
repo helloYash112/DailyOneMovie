@@ -2,9 +2,18 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { data } from "react-router-dom";
 import { normalizeFileType } from "./app.js";
-import { sliceFileForUpload, runWithConcurrencyLimit, createUploadTasks,generateSafeFileName } from "./app.js";
-import { setMovieProgress, setError, setStep, setPosterProgress } from "./movieSlice.js";
-
+import {
+  sliceFileForUpload,
+  runWithConcurrencyLimit,
+  createUploadTasks,
+  generateSafeFileName,
+} from "./app.js";
+import {
+  setMovieProgress,
+  setError,
+  setStep,
+  setPosterProgress,
+} from "./movieSlice.js";
 
 export const apiLink = import.meta.env.VITE_API_URL;
 //export const apiLink = "http://localhost:8080";
@@ -30,7 +39,9 @@ export const uploadHlsMovie = createAsyncThunk(
       const response = await API.post("/movies/hls/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (progressEvent) => {
-          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total,
+          );
           dispatch(setMovieProgress(percent));
         },
       });
@@ -39,11 +50,14 @@ export const uploadHlsMovie = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data || err.message);
     }
-  }
+  },
 );
 export const uploadMoviePipeline = createAsyncThunk(
   "movies/uploadMoviePipeline",
-  async ({ title, genre, duration, rating, movieFile, posterFile }, thunkAPI) => {
+  async (
+    { title, genre, duration, rating, movieFile, posterFile },
+    thunkAPI,
+  ) => {
     const { dispatch } = thunkAPI;
 
     try {
@@ -56,98 +70,120 @@ export const uploadMoviePipeline = createAsyncThunk(
       dispatch(setPosterProgress(0));
 
       // STEP 2: Initiate multipart upload for movie
-    // STEP 2: Initiate multipart upload for movie
-   
-const initiateResponse = await dispatch(
-  initiateMultiUploads({
-    fileName:generateSafeFileName(title,movieFile.name),
-    totalParts,
-  })
-).unwrap();
+      // STEP 2: Initiate multipart upload for movie
 
-const { uploadId, fileKey, partUrls } = initiateResponse;
+      const initiateResponse = await dispatch(
+        initiateMultiUploads({
+          fileName: generateSafeFileName(title, movieFile.name),
+          totalParts,
+        }),
+      ).unwrap();
 
+      const { uploadId, fileKey, partUrls } = initiateResponse;
 
       // STEP 3: Upload movie chunks concurrently
-      const uploadTasks = createUploadTasks(fileChunks, partUrls, totalFileSize, (progress) => {
-        dispatch(setMovieProgress(progress));
-      });
+      const uploadTasks = createUploadTasks(
+        fileChunks,
+        partUrls,
+        totalFileSize,
+        (progress) => {
+          dispatch(setMovieProgress(progress));
+        },
+      );
       dispatch(setStep("uploading file to cloud storage..."));
       const completedParts = await runWithConcurrencyLimit(4, uploadTasks);
-      
+
       completedParts.sort((a, b) => a.partNumber - b.partNumber);
-      
+
       // STEP 4: Complete multipart upload
       //console.log(completedParts);
       const completeResponse = await dispatch(
-        completeMultiUploads({uploadId, fileKey, parts:completedParts})
+        completeMultiUploads({ uploadId, fileKey, parts: completedParts }),
       );
       const finalResult = completeResponse.data || completeResponse;
-      
-      
+
       // STEP 5: Get presigned URL for poster
       dispatch(setStep("getting upload request from api..."));
-      const posRes = await dispatch( preparePutUrl({
-        fileName: posterFile.name,
-        contentType: posterFile.type
-      })).unwrap(); // unwrap to get { uploadUrl, objectKey }
-       
+      const posRes = await dispatch(
+        preparePutUrl({
+          fileName: posterFile.name,
+          contentType: posterFile.type,
+        }),
+      ).unwrap(); // unwrap to get { uploadUrl, objectKey }
+
       // STEP 6: Upload poster file to cloud
       dispatch(setStep("poster is uploading to cloud..."));
-      const cloudResponsePoster=await axios.put(posRes.uploadUrl, posterFile, {
-        headers: {
-          "Content-Type": posterFile.type
+      const cloudResponsePoster = await axios.put(
+        posRes.uploadUrl,
+        posterFile,
+        {
+          headers: {
+            "Content-Type": posterFile.type,
+          },
+          onUploadProgress: (event) => {
+            if (!event.total) return;
+            const percent = Math.round((event.loaded * 100) / event.total);
+            dispatch(setPosterProgress(percent));
+          },
         },
-        onUploadProgress: (event) => {
-          if (!event.total) return;
-          const percent = Math.round((event.loaded * 100) / event.total);
-         dispatch(setPosterProgress(percent));
-        },
-      });
-      
+      );
+
       // STEP 7: Save metadata
       const moviePayload = {
         title,
         genre,
         duration: Number(duration),
         rating: Number(rating),
-        movieKey: fileKey,              // movie file key from earlier
-        posterKey: posRes.objectKey // poster key from presigned URL response
+        movieKey: fileKey, // from initiateMultiUploads
+        posterKey: posRes.objectKey, // from preparePutUrl
+        playlistKey: fileKey, // same as movieKey if you want
+        chunkKeysJson: JSON.stringify(
+          completedParts.map((p) => ({
+            partNumber: p.partNumber,
+            etag: p.etag,
+          })),
+        ),
       };
-      dispatch(setStep("meta data saving to database..."))
+
+      dispatch(setStep("meta data saving to database..."));
       const dataRes = await dispatch(saveMovie(moviePayload)).unwrap();
-      
+
       dispatch(setMovieProgress(100));
       return dataRes;
-
     } catch (err) {
       dispatch(setMovieProgress(0));
       dispatch(setPosterProgress(0));
       dispatch(setError(err.message));
       return thunkAPI.rejectWithValue(
-        err.response?.data?.message || err.message || "Upload pipeline failed"
+        err.response?.data?.message || err.message || "Upload pipeline failed",
       );
     }
-  }
+  },
 );
 export const preparePutUrl = createAsyncThunk(
   "movies/ preparePutUrl",
   async (file, thunkAPI) => {
     try {
-      const response = await API.post("movies/prepare-url", {
-        fileName: file.name,
-        contentType: file.type
-      }, {
-        headers: {
-          "Content-Type": "application/json"
-        }
-      });
+      const response = await API.post(
+        "movies/prepare-url",
+        {
+          fileName: file.name,
+          contentType: file.type,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
 
       return response.data;
     } catch (err) {
-      return thunkAPI.rejectWithValue(err.message || "Failed to generate presigned URL");
+      return thunkAPI.rejectWithValue(
+        err.message || "Failed to generate presigned URL",
+      );
     }
-  }
+  },
 );
 
 export const initiateMultiUploads = createAsyncThunk(
@@ -163,7 +199,7 @@ export const initiateMultiUploads = createAsyncThunk(
     } catch (err) {
       return thunkAPI.rejectWithValue(err.message || "initiate request fail");
     }
-  }
+  },
 );
 
 export const completeMultiUploads = createAsyncThunk(
@@ -184,12 +220,13 @@ export const completeMultiUploads = createAsyncThunk(
 
       // 4. Return the success response to the extraReducers
       return result; // Expected payload: "success" or { res: "success" }
-
     } catch (err) {
       // 5. Catch network or server errors gracefully
-      return thunkAPI.rejectWithValue(err.response?.data?.message || err.message || "Finalize request failed");
+      return thunkAPI.rejectWithValue(
+        err.response?.data?.message || err.message || "Finalize request failed",
+      );
     }
-  }
+  },
 );
 
 export const uploadMovieFlow = createAsyncThunk(
@@ -200,11 +237,11 @@ export const uploadMovieFlow = createAsyncThunk(
       const dispatch = thunkAPI.dispatch;
 
       const { movieFile, posterFile, title, genre, duration, rating } = payload;
-      
+
       // 1. Get URLs
       const urls = await dispatch(
         getUploadURL({
-          movieFileName: generateSafeFileName(title,movieFile.name),
+          movieFileName: generateSafeFileName(title, movieFile.name),
           movieFileType: normalizeFileType(movieFile.type),
           posterFileName: posterFile.name,
           posterFileType: normalizeFileType(posterFile.type),
@@ -273,7 +310,8 @@ export const uploadToCloudWithProgress = createAsyncThunk(
           if (!event.total) return;
           const percent = Math.round((event.loaded * 100) / event.total);
           if (type === "movie") thunkAPI.dispatch(setMovieProgress(percent));
-          else if (type === "poster") thunkAPI.dispatch(setPosterProgress(percent));
+          else if (type === "poster")
+            thunkAPI.dispatch(setPosterProgress(percent));
         },
       });
       return true;
@@ -388,4 +426,3 @@ export const deleteMovieAndPoster = createAsyncThunk(
     }
   },
 );
-

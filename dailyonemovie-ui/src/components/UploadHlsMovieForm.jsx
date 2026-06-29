@@ -31,52 +31,87 @@ export default function UploadHlsMovieForm() {
     dispatch(uploadHlsMovie(form));
   };
 
-  // ✅ Only show MovieStatus once we have an ID
+  // ✅ Show MovieStatus once we have an ID
   if (submitted && currentMovieId) {
     return <MovieStatus movieId={currentMovieId} />;
   }
 
-  // ✅ While waiting for backend, show a loading message
+  // ✅ Loading state
   if (submitted && !currentMovieId) {
     return (
-      <p className="text-blue-500 text-center mt-10">
+      <p className="text-blue-400 text-center mt-10">
         Uploading… waiting for movie ID from backend
       </p>
     );
   }
 
-  // ✅ Otherwise show the form
+  // ✅ Dark theme form
   return (
     <form
       onSubmit={handleSubmit}
-      className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md space-y-4"
+      className="max-w-md mx-auto mt-10 p-6 bg-gray-900 rounded-lg shadow-lg space-y-4"
     >
-      <h2 className="text-xl font-semibold mb-4">Upload Movie</h2>
+      <h2 className="text-2xl font-semibold text-white mb-4">
+        Upload HLS Movie
+      </h2>
 
-      <input type="text" name="title" placeholder="Title"
-        value={form.title} onChange={handleChange}
-        className="w-full border rounded p-2" />
+      <input
+        type="text"
+        name="title"
+        placeholder="Title"
+        value={form.title}
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <input type="text" name="genre" placeholder="Genre"
-        value={form.genre} onChange={handleChange}
-        className="w-full border rounded p-2" />
+      <input
+        type="text"
+        name="genre"
+        placeholder="Genre"
+        value={form.genre}
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <input type="number" name="duration" placeholder="Duration (minutes)"
-        value={form.duration} onChange={handleChange}
-        className="w-full border rounded p-2" />
+      <input
+        type="number"
+        name="duration"
+        placeholder="Duration (minutes)"
+        value={form.duration}
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <input type="number" step="0.1" name="rating" placeholder="Rating"
-        value={form.rating} onChange={handleChange}
-        className="w-full border rounded p-2" />
+      <input
+        type="number"
+        step="0.1"
+        name="rating"
+        placeholder="Rating"
+        value={form.rating}
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <input type="file" name="movieFile" accept="video/*"
-        onChange={handleChange} className="w-full border rounded p-2" />
+      <input
+        type="file"
+        name="movieFile"
+        accept="video/*"
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <input type="file" name="posterFile" accept="image/*"
-        onChange={handleChange} className="w-full border rounded p-2" />
+      <input
+        type="file"
+        name="posterFile"
+        accept="image/*"
+        onChange={handleChange}
+        className="w-full px-3 py-2 rounded-md bg-gray-800 text-white border border-gray-700 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+      />
 
-      <button type="submit"
-        className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600">
+      <button
+        type="submit"
+        className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition"
+      >
         Submit
       </button>
     </form>
