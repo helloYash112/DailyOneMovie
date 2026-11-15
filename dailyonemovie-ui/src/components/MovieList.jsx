@@ -3,10 +3,10 @@ import { MovieCard } from "./MovieCard";
 
 export function MovieList() {
   const { movies = [], status } = useSelector(
-    (state) => state.movies || {}
+    (state) => state.views || {}
   );
 
- //console.log("movies:", movies);
+ console.log("movies:", movies);
 // console.log("type of movie:", typeof movies);
 
   if (status === "loading") {
