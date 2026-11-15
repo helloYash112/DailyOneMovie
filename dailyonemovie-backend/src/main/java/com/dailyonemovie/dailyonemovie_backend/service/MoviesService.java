@@ -2,13 +2,20 @@ package com.dailyonemovie.dailyonemovie_backend.service;
 
 import java.io.File;
 import java.io.IOException;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.stream.Stream;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -17,6 +24,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsUploadReqDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsUploadSession;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MoviesDTO;
@@ -27,16 +36,25 @@ import com.dailyonemovie.dailyonemovie_backend.entity.Movies;
 import com.dailyonemovie.dailyonemovie_backend.repository.HlsMetadataRepository;
 import com.dailyonemovie.dailyonemovie_backend.repository.MovieRepository;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+
+
 @Service
 public class MoviesService {
-
+	private static final Logger log = LoggerFactory.getLogger(MoviesService.class);
 	private final MovieRepository moviesRepository;
 	private final MovieStorageService storageService;
 	private final HlsMetadataRepository hlsRepository;
 	private final TaskExecutor taskExecutor;
+	@Qualifier("JavaBaseHlsUploader")
 	private final VideoProcessingService videoProcessService;
 	private final R2StorageProperties storageProperties;
 	Movies movie=null;
+	@Autowired
+	HlsCloudUploader hlsUpload;
 
 	public MoviesService(MovieRepository moviesRepository, MovieStorageService storageService,
 			HlsMetadataRepository hlsrepo ,TaskExecutor taskExecutor,VideoProcessingService videoProcessService, R2StorageProperties storageProperties) {
@@ -180,6 +198,10 @@ public class MoviesService {
 
 	public MultipartInitResponse initiateMultipartUploadService(String fileName, int totalParts) {
 		return storageService.initiateMultipartUpload(fileName, totalParts);
+	}
+	
+	public HlsUploadSession initiateCliHlsUpload(String posterFileName, int totalParts) {
+		return storageService.initiateHlsUpload(posterFileName, totalParts);
 	}
 
 	public void completeMultipartUploadService(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
@@ -337,6 +359,116 @@ public class MoviesService {
         moviesRepository.updateFinalStatus(movieId, status);
         moviesRepository.updateMovieProgress(movieId, 100);
     }
-   
+    
+    //--------------------------creating a orchestor for uploading tsl file from local device--------------------------
+ // Step 1: Orchestrator entry point
+    public Movies cliBaseUpload(HlsUploadReqDto request) throws IOException {
+        // Upload poster
+        String posterKey = "posters/" + UUID.randomUUID() + "_" + request.posterFile().getOriginalFilename();
+        storageService.uploadFile(posterKey, request.posterFile(), request.posterFile().getContentType());
+
+        // Persist metadata
+        Movies movie = new Movies();
+        movie.setTitle(request.title());
+        movie.setGenre(request.genre());
+        movie.setDuration(request.duration());
+        movie.setRating(request.rating());
+        movie.setPosterKey(posterKey);
+        movie.setPosterUrl(storageProperties.getPublicUrl() + "/" + posterKey);
+        movie.setStatus("UPLOADING");
+        movie.setProgress(0);
+
+        movie = moviesRepository.saveAndFlush(movie); // ID is now available
+        final Long movieId = movie.getId();
+
+        // Async execution of HLS upload pipeline
+        taskExecutor.execute(() -> processHlsCloudUpload(request.manifestPath(), movieId));
+
+        return movie;
+    }
+
+    // Step 2: HLS upload pipeline
+    /**
+     * Master entry point to process and upload HLS streams (Single or Multi-Bitrate).
+     * Automatically detects whether the provided manifest path is an ABR master playlist
+     * or a single-bitrate variant playlist and routes it to the appropriate upload pipeline.
+     *
+     * @param manifestPath Local absolute path to the .m3u8 manifest file.
+     * @param movieId      Database identifier for tracking state and progress.
+     */
+    public void processHlsCloudUpload(String manifestPath, Long movieId) {
+        log.info("[ENTRY] Starting HLS cloud upload process for Movie ID: {} | Path: {}", movieId, manifestPath);
+
+        try {
+            // 1. Initial State Persistence
+            updateStatusInDb(movieId, "CONVERTING_AND_STREAMING", 10);
+
+            Path path = Paths.get(manifestPath);
+            if (!Files.exists(path)) {
+                throw new IllegalArgumentException("Target manifest file does not exist at path: " + manifestPath);
+            }
+
+            String playListUrl;
+
+            // 2. Dynamic Pipeline Selection Logic
+            if (isMasterManifest(path)) {
+                log.info("[ROUTING] Detected Adaptive Bitrate (ABR) Master Playlist for Movie ID: {}. Triggering Orchestrator.", movieId);
+
+                // Calls Orchestrator -> internal variant loops -> 4-parameter uploadHlsFolder
+                playListUrl = hlsUpload.uploadAdaptiveHlsFolder(
+                    movieId,
+                    manifestPath,
+                    this::updateProgressInDb
+                );
+
+            } else {
+                log.info("[ROUTING] Detected Single-Bitrate Playlist for Movie ID: {}. Triggering Direct Overload.", movieId);
+
+                // Calls 3-parameter overloaded uploadHlsFolder
+                hlsUpload.uploadHlsFolder(
+                    movieId,
+                    manifestPath,
+                    this::updateProgressInDb
+                );
+
+                // Construct standard cloud URL key for single bitrate
+                playListUrl = "hls/" + movieId + "/" + path.getFileName().toString();
+            }
+
+            // 3. Post-Upload Finalization
+            log.info("[SUCCESS] Cloud upload completed for Movie ID: {}. Saving metadata...", movieId);
+            saveHlsMetadata(movieId, playListUrl);
+            updateFinalStatusInDb(movieId, "READY");
+
+        } catch (Exception e) {
+            log.error("Critical pipeline processing fault encountered on Movie ID: {} | Cause: {}", movieId, e.getMessage(), e);
+            updateStatusInDb(movieId, "FAILED", 0);
+        }
+    }
+
+    /**
+     * Inspects a .m3u8 manifest file to determine if it is an ABR Master Playlist.
+     * Checks for the presence of ABR stream variant tags or standard naming conventions.
+     *
+     * @param manifestPath Local Path to the manifest file.
+     * @return true if the manifest contains variant stream definitions; false otherwise.
+     */
+    private boolean isMasterManifest(Path manifestPath) {
+        // Strategy 1: Check standard naming convention first (Fast Check)
+        String fileName = manifestPath.getFileName().toString().toLowerCase();
+        if (fileName.contains("master")) {
+            return true;
+        }
+
+        // Strategy 2: Inspect file contents for HLS Master Playlist tags (#EXT-X-STREAM-INF)
+        try (Stream<String> lines = Files.lines(manifestPath)) {
+            return lines.anyMatch(line -> line.trim().startsWith("#EXT-X-STREAM-INF"));
+        } catch (Exception e) {
+            log.warn("Failed to inspect manifest content for ABR detection at path: {}. Defaulting to Single-Bitrate execution.", manifestPath, e);
+            return false;
+        }
+    }
+    
+
 
 }

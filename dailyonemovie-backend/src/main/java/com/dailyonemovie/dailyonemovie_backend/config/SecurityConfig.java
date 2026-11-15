@@ -47,7 +47,7 @@ public class SecurityConfig {
                 // GitHub OAuth login
                 .oauth2Login(oauth -> oauth
                         .defaultSuccessUrl(
-                                "https://dailyonemovie.netlify.app/",
+                                "http://localhost:5173/",
                                 true
                         )
                 )
@@ -61,7 +61,21 @@ public class SecurityConfig {
 
         return http.build();
     }
+/*
+	 @Bean
+	    public SecurityFilterChain securityFilterChain(HttpSecurity http)
+	            throws Exception {
 
+	        http
+	            .cors(Customizer.withDefaults())
+	            .csrf(csrf -> csrf.disable())
+	            .authorizeHttpRequests(auth -> auth
+	                .anyRequest().permitAll()
+	            );
+
+	        return http.build();
+	    }
+	*/
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
 

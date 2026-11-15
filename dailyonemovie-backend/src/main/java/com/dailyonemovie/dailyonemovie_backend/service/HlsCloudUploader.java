@@ -1,5 +1,8 @@
+package com.dailyonemovie.dailyonemovie_backend.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Service;
 
 import com.dailyonemovie.dailyonemovie_backend.config.R2StorageProperties;
 
@@ -9,20 +12,25 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
+@Service("CliBaseHlsUploader")
 public class HlsCloudUploader {
 
     private static final Logger log = LoggerFactory.getLogger(HlsCloudUploader.class);
-    private static final int THREAD_POOL_SIZE = 10;
+    private static final int THREAD_POOL_SIZE = Runtime.getRuntime().availableProcessors() * 2;
     
     private final S3Client s3Client;
     private R2StorageProperties r2StorageProperties;
@@ -42,13 +50,17 @@ public class HlsCloudUploader {
      * @param m3u8FilePathStr Absolute local path to the primary .m3u8 manifest file.
      * @param progressTracker Callback function persisting progress: (uploadId, percentage).
      */
-    public void uploadHlsFolder(String uploadId, String m3u8FilePathStr, BiConsumer<String, Integer> progressTracker) {
+    public void uploadHlsFolder(Long uploadId,Path hlsRoot, String m3u8FilePathStr, BiConsumer<Long, Integer> progressTracker) {
         log.info("Starting HLS upload process for Upload ID: {}. Manifest: {}", uploadId, m3u8FilePathStr);
+        //rootDirectory=ex :C:\Videos\hls
 
         Path m3u8Path = Paths.get(m3u8FilePathStr);
-        Path baseDirectory = m3u8Path.getParent();
+       // Path baseDirectory = m3u8Path.getParent();
+        Path variantDirectory = m3u8Path.getParent();
+        
+        
 
-        if (baseDirectory == null || !Files.exists(m3u8Path)) {
+        if (variantDirectory== null || !Files.exists(m3u8Path)) {
             throw new IllegalArgumentException("Invalid manifest path or directory structure.");
         }
 
@@ -66,9 +78,13 @@ public class HlsCloudUploader {
         try {
             // 3. Concurrently queue all TS segment uploads
             for (String segmentName : tsSegments) {
-                Path segmentPath = baseDirectory.resolve(segmentName);
-                String s3Key = "hls/" + uploadId + "/" + segmentName;
+                Path segmentPath =variantDirectory.resolve(segmentName);
+               // String s3Key = "hls/" + uploadId + "/" + segmentName;
+                Path relativePath = hlsRoot.relativize(segmentPath);
 
+                String s3Key =
+                    "hls/" + uploadId + "/"
+                    + relativePath.toString().replace("\\", "/");
                 phaser.register();
                 executor.submit(() -> {
                     try {
@@ -84,11 +100,16 @@ public class HlsCloudUploader {
             }
 
             // 4. Concurrently queue the actual .m3u8 manifest file
-            String manifestS3Key = "hls/" + uploadId + "/" + m3u8Path.getFileName().toString();
+            //String manifestS3Key = "hls/" + uploadId + "/" + m3u8Path.getFileName().toString();
+            Path manifestRelative = hlsRoot.relativize(m3u8Path);
+
+            String manifestKey =
+                "hls/" + uploadId + "/"
+                + manifestRelative.toString().replace("\\", "/");
             phaser.register();
             executor.submit(() -> {
                 try {
-                    uploadFileToCloud(m3u8Path, manifestS3Key);
+                    uploadFileToCloud(m3u8Path, manifestKey);
                     updateProgress(uploadId, completedFiles.incrementAndGet(), totalFiles, progressTracker);
                 } catch (Exception e) {
                     log.error("Failed to upload manifest file due to: {}", e.getMessage());
@@ -120,7 +141,43 @@ public class HlsCloudUploader {
                 Thread.currentThread().interrupt();
             }
         }
+        return ;
     }
+    
+    public void uploadHlsFolder(Long uploadId, String m3u8FilePathStr, BiConsumer<Long, Integer> progressTracker) {
+
+    	log.info("Initiating single-bitrate HLS upload pipeline for Upload ID: {}", uploadId);
+
+
+
+    	if (m3u8FilePathStr == null || m3u8FilePathStr.trim().isEmpty()) {
+
+    	throw new IllegalArgumentException("Manifest file path cannot be null or empty for Upload ID: " + uploadId);
+
+    	}
+
+
+
+    	Path m3u8Path = Paths.get(m3u8FilePathStr);
+
+    	Path parentDir = m3u8Path.getParent();
+
+
+
+    	if (parentDir == null) {
+
+    	throw new IllegalArgumentException("Invalid manifest path: missing parent directory for Upload ID: " + uploadId);
+
+    	}
+
+
+
+    	// For single-bitrate, the root folder is the parent directory of the m3u8 file
+
+    	uploadHlsFolder(uploadId, parentDir, m3u8FilePathStr, progressTracker);
+
+    	} 
+
 
     /**
      * Helper: Synchronously parses an m3u8 file to extract segment filenames (.ts).
@@ -171,7 +228,7 @@ public class HlsCloudUploader {
     /**
      * Helper: Thread-safe calculation and distribution of progress states to the DB tracker.
      */
-    private void updateProgress(String uploadId, int completed, int total, BiConsumer<String, Integer> progressTracker) {
+    private void updateProgress(Long uploadId, int completed, int total, BiConsumer<Long, Integer> progressTracker) {
         int percentage = (int) (((double) completed / total) * 100);
         log.info("Upload ID: {} Progress: {}% ({}/{})", uploadId, percentage, completed, total);
         if (progressTracker != null) {
@@ -182,4 +239,119 @@ public class HlsCloudUploader {
             }
         }
     }
+    
+    
+    //-----------------------------------------uploading adaptive bitrate hlls file --------------------------------------------//
+    public String uploadAdaptiveHlsFolder(
+            Long uploadId,
+            String masterManifestPath,
+            BiConsumer<Long, Integer> progressTracker) throws IOException {
+
+        log.info("Starting Adaptive HLS upload for Upload ID: {}", uploadId);
+
+        Path masterPath = Paths.get(masterManifestPath);
+        normalizePlaylist(masterPath);
+        
+
+        if (!Files.exists(masterPath)) {
+            throw new IllegalArgumentException(
+                    "Master playlist not found: " + masterManifestPath);
+        }
+
+        Path rootDirectory = masterPath.getParent();
+
+        if (rootDirectory == null) {
+            throw new IllegalArgumentException("Invalid HLS directory.");
+        }
+
+        try {
+
+            List<Path> variantPlaylists = extractVariantPlaylists(masterPath);
+
+            if (variantPlaylists.isEmpty()) {
+                throw new IllegalStateException(
+                        "No variant playlists found in master.m3u8");
+            }
+
+            for (Path playlist : variantPlaylists) {
+
+                log.info("Uploading Variant Playlist: {}", playlist);
+                normalizePlaylist(playlist);
+
+                uploadHlsFolder(uploadId, rootDirectory, playlist.toString(), progressTracker);
+            }
+
+            String masterKey = "hls/" + uploadId + "/master.m3u8";
+
+            uploadFileToCloud(masterPath, masterKey);
+
+            log.info("Adaptive HLS upload completed for Upload ID: {}", uploadId);
+
+            return masterKey;
+
+        } catch (Exception ex) {
+
+            throw new RuntimeException(
+                    "Adaptive HLS upload failed.", ex);
+
+        }
+    }
+    
+    
+    private List<Path> extractVariantPlaylists(Path masterPlaylist)
+            throws IOException {
+
+        List<Path> playlists = new ArrayList<>();
+
+        Path rootDirectory = masterPlaylist.getParent();
+
+        try (BufferedReader reader = Files.newBufferedReader(masterPlaylist)) {
+
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty()) {
+                    continue;
+                }
+
+                if (line.startsWith("#")) {
+                    continue;
+                }
+
+                if (!line.endsWith(".m3u8")) {
+                    continue;
+                }
+
+                Path playlistPath = rootDirectory.resolve(line).normalize();
+
+                if (!Files.exists(playlistPath)) {
+
+                    throw new FileNotFoundException(
+                            "Variant playlist not found: " + playlistPath);
+
+                }
+
+                playlists.add(playlistPath);
+            }
+        }
+
+        return playlists;
+    }
+   
+    private void normalizePlaylist(Path playlist) throws IOException {
+
+        String content = Files.readString(playlist);
+
+        content = content.replace("\\", "/");
+
+        Files.writeString(
+                playlist,
+                content,
+                StandardOpenOption.TRUNCATE_EXISTING
+        );
+    }
+	
 }

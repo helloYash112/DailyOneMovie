@@ -53,6 +53,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsUploadSession;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MultipartInitResponse;
 import com.dailyonemovie.dailyonemovie_backend.DTO.PartUrlInfo;
 import com.dailyonemovie.dailyonemovie_backend.config.R2StorageProperties;
@@ -161,6 +162,49 @@ public class MovieStorageService {
 
 		return new MultipartInitResponse(uploadId, fileKey, partUrls);
 	}
+	
+	public HlsUploadSession initiateHlsUpload(String posterFileName, int totalParts) {
+	    // 1. Generate unique folder
+	    String folderId = UUID.randomUUID().toString();
+	    String folderPath = "hls/" + folderId + "/";
+
+	    // 2. Initiate multipart upload for index.ts
+	    String tsKey = folderPath + "index.ts";
+	    CreateMultipartUploadRequest createRequest = CreateMultipartUploadRequest.builder()
+	        .bucket(storageProperties.getBucket())
+	        .key(tsKey)
+	        .build();
+
+	    CreateMultipartUploadResponse createResponse = s3Client.createMultipartUpload(createRequest);
+	    String uploadId = createResponse.uploadId();
+
+	    // 3. Generate presigned URLs for each part
+	    List<PartUrlInfo> partUrls = new ArrayList<>();
+	    for (int partNumber = 1; partNumber <= totalParts; partNumber++) {
+	        UploadPartRequest uploadPartRequest = UploadPartRequest.builder()
+	            .bucket(storageProperties.getBucket())
+	            .key(tsKey)
+	            .uploadId(uploadId)
+	            .partNumber(partNumber)
+	            .build();
+
+	        UploadPartPresignRequest presignRequest = UploadPartPresignRequest.builder()
+	            .signatureDuration(Duration.ofMinutes(45))
+	            .uploadPartRequest(uploadPartRequest)
+	            .build();
+
+	        String presignedUrl = s3Presigner.presignUploadPart(presignRequest).url().toString();
+	        partUrls.add(new PartUrlInfo(partNumber, presignedUrl));
+	    }
+
+	    // 4. Build other keys
+	    String m3u8Key = folderPath + "index.m3u8";
+	    String posterKey = folderPath + posterFileName;
+
+	    // 5. Return session object
+	    return new HlsUploadSession(folderPath, tsKey, m3u8Key, posterKey, uploadId, partUrls);
+	}
+
 
 	public void completeMultipartUpload(String fileKey, String uploadId, List<CompletedPartDto> completedParts) {
 		System.out.println("i am in MovieStorage class ...");

@@ -24,6 +24,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompleteMultipartRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.CompletedPartDto;
 import com.dailyonemovie.dailyonemovie_backend.DTO.HlsDTO;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsUploadReqDto;
+import com.dailyonemovie.dailyonemovie_backend.DTO.HlsUploadSession;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieSaveRequest;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieStatusDTO;
 import com.dailyonemovie.dailyonemovie_backend.DTO.MovieUploadRequest;
@@ -109,6 +111,19 @@ public class MoviesController {
 	            "uploadUrl", uploadUrl,
 	            "objectKey", objectKey
 	    ));
+	}
+	
+	@PostMapping("/hls-put-url")
+	public ResponseEntity<?> getHlsPutUrl(@RequestBody Map<String, String> request){
+		 String fileName = request.get("fileName");
+		 String contentType = request.get("contentType");
+		  String uploadUrl = moviesService.getUploadUrl(fileName, contentType);
+		  return ResponseEntity.ok(Map.of(
+		            "uploadUrl", uploadUrl,
+		            "objectKey", fileName
+		    ));
+		 
+		
 	}
 
 	 @PostMapping("/confirm-save")
@@ -257,5 +272,25 @@ public class MoviesController {
                 .headers(headers)
                 .body(manifest);
     }
+    @PostMapping(value = "/cli-hls-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Movies> uploadMovie(@ModelAttribute HlsUploadReqDto request) {
+        try {
+            Movies movie = moviesService.cliBaseUpload(request);
+            return ResponseEntity.ok(movie);
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    @PostMapping("/cli-hls-init")
+    public ResponseEntity<HlsUploadSession> initiateCliHlsUpload(@RequestBody MultipartInitRequest request) {
+
+        try {
+            HlsUploadSession session = moviesService.initiateCliHlsUpload(request.fileName(), request.totalParts());
+            return ResponseEntity.ok(session);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
 
 }

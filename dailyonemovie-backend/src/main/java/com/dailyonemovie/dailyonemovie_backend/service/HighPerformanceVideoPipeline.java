@@ -19,12 +19,13 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-@Service
+@Service("JavaBaseHlsUploader")
 public class HighPerformanceVideoPipeline implements VideoProcessingService{
 
     private static final Logger log = LoggerFactory.getLogger(HighPerformanceVideoPipeline.class);
@@ -258,4 +259,9 @@ public class HighPerformanceVideoPipeline implements VideoProcessingService{
             log.error("Failed to purge temporary runtime directories cleanly: {}", dir, e);
         }
     }
+	@Override
+	public void uploadHlsFolder(String uploadId, String m3u8FilePathStr, BiConsumer<String, Integer> progressTracker) {
+		// TODO Auto-generated method stub
+		
+	}
 }
