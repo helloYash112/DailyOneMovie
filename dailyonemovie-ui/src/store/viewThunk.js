@@ -2,9 +2,12 @@ import { createAsyncThunk} from "@reduxjs/toolkit";
 import axios from "axios";
 export const apiLink = import.meta.env.VITE_API_URL;
 
-export const API_URL = axios.create({
+
+const API_URL = axios.create({
   baseURL: apiLink,
-  withCredentials: true, // critical
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 /**
  * url/movies
@@ -18,7 +21,7 @@ export const fetchMovies = createAsyncThunk(
   "movies/fetchMovies",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/movies`);
+      const response = await API_URL.get(`/movies`);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -33,7 +36,7 @@ export const fetchMovieById = createAsyncThunk(
   "movies/fetchMovieById",
   async (id, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/movies/${id}`);
+      const response = await API_URL.get(`/movies/${id}`);
       return response.data;
     } catch (error) {
       return rejectWithValue(
@@ -48,7 +51,7 @@ export const checkApiHealth = createAsyncThunk(
   "movies/checkApiHealth",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(`${API_URL}/health`);
+      const response = await API_URL.get(`/health`);
       return response.data;
     } catch (error) {
       return rejectWithValue(
