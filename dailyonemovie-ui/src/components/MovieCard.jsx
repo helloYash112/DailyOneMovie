@@ -7,15 +7,17 @@ export function MovieCard({ movie }) {
   return (
     <div className="group overflow-hidden rounded-xl bg-gray-900 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl">
 
-      {/* Movie Poster */}
-      <div className="relative overflow-hidden">
-        <img
-          src={movie.posterUrl}
-          alt={movie.title}
-          loading="lazy"
-          className="h-72 w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
-      </div>
+     
+{/* Movie Poster */}
+<div className="relative w-full aspect-2/3 overflow-hidden rounded-t-xl bg-gray-900">
+  <img
+    src={movie.posterUrl}
+    alt={`${movie.title} poster`}
+    loading="lazy"
+    className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105"
+  />
+</div>
+
 
       {/* Movie Metadata */}
       <div className="p-4">
